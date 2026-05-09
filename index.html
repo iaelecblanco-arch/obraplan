@@ -1,0 +1,835 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>OBRAPLAN</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; background: #f8fafc; }
+  .btn-header { display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 10px; font-size: 11px; font-weight: 900; text-transform: uppercase; transition: all 0.2s; border: 1px solid #94a3b8; background: white; cursor: pointer; }
+  .btn-header:hover { background-color: #f1f5f9; }
+  .label-form { display: block; font-size: 10px; font-weight: 900; color: #64748b; text-transform: uppercase; margin-bottom: 4px; }
+  .input-form { width: 100%; padding: 8px 12px; background-color: #f8fafc; border: 1px solid #cbd5e1; border-radius: 10px; font-size: 12px; outline: none; transition: border 0.2s; }
+  .input-form:focus { border-color: #3b82f6; }
+  .task-card { transition: all 0.15s; border-width: 1.5px; border-style: solid; }
+  .task-card:hover { transform: translateY(-0.5px); box-shadow: 0 4px 6px rgba(0,0,0,0.08); }
+  select.input-form { appearance: auto; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
+  .animate-pulse { animation: pulse 2s cubic-bezier(0.4,0,0.6,1) infinite; }
+  @keyframes fadeIn { from{opacity:0;transform:scale(0.96)} to{opacity:1;transform:scale(1)} }
+  .modal-anim { animation: fadeIn 0.2s ease; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner { width:40px;height:40px;border:4px solid rgba(255,255,255,0.2);border-top-color:white;border-radius:50%;animation:spin 0.8s linear infinite; }
+  @media (max-width: 768px) {
+    .desktop-table { display: none !important; }
+    .mobile-cards { display: flex !important; }
+  }
+  @media (min-width: 769px) {
+    .mobile-cards { display: none !important; }
+  }
+  @media print {
+    @page { size: A4 landscape; margin: 5mm; }
+    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
+    html, body { background: white !important; margin: 0 !important; padding: 0 !important; overflow: visible !important; }
+    #root { overflow: visible !important; }
+    header, .no-print { display: none !important; }
+    main { padding: 0 !important; overflow: visible !important; }
+    .desktop-table { display: block !important; overflow: visible !important; }
+    .mobile-cards { display: none !important; }
+    .main-card { border-radius: 0 !important; box-shadow: none !important; border: 1px solid #94a3b8 !important; width: 100% !important; max-width: 100% !important; overflow: visible !important; }
+    table { min-width: 0 !important; width: 100% !important; table-layout: fixed !important; font-size: 9px !important; }
+    th, td { overflow: hidden !important; padding: 3px !important; }
+    .task-card { break-inside: avoid !important; page-break-inside: avoid !important; font-size: 9px !important; padding: 2px 4px !important; }
+    .task-card div { font-size: 9px !important; }
+    tr { break-inside: avoid !important; page-break-inside: avoid !important; }
+    .animate-pulse { animation: none !important; }
+    div[style*="position:sticky"], td[style*="position:sticky"] { position: relative !important; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useMemo, useEffect, useCallback } = React;
+
+// --- SUPABASE CONFIG ---
+const SUPABASE_URL = 'https://mnbqxnsqnabnvjuaebas.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1uYnF4bnNxbmFibnZqdWFlYmFzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgxMjU2NDIsImV4cCI6MjA5MzcwMTY0Mn0.Oo1o9dLDa6bprGblv-Mb-8YpnC0CXKjoPcJndJzAfsw';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// --- Helpers DB ---
+// Generate unique numeric IDs using random large integers to avoid collisions
+const newId = () => {
+  const arr = new Uint32Array(2);
+  crypto.getRandomValues(arr);
+  return arr[0] * 1000000 + arr[1] % 1000000;
+};
+const newSmallId = () => Math.floor(Math.random() * 900000) + 100000; // safe int for techs/admins
+const dbTaskToLocal = (t) => ({ internalId: t.internal_id, id: t.id, customer: t.customer, reference: t.reference, instructions: t.instructions || '', date: t.date, techIds: t.tech_ids || [], completed: t.completed, isAbsence: t.is_absence, fileName: t.file_name || null });
+const localTaskToDB = (t) => ({ internal_id: t.internalId, id: t.id, customer: t.customer, reference: t.reference, instructions: t.instructions || '', date: t.date, tech_ids: t.techIds, completed: t.completed || false, is_absence: t.isAbsence || false, file_name: t.fileName || null });
+const dbTechToLocal = (t) => ({ id: t.id, name: t.name, surname: t.surname, username: t.username, password: t.password, role: t.role, shiftType: t.shift_type, sortOrder: t.sort_order ?? 999 });
+
+// --- SVG Icons ---
+const ChevronLeft = (p) => <svg xmlns="http://www.w3.org/2000/svg" width={p.size||16} height={p.size||16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>;
+const ChevronRight = (p) => <svg xmlns="http://www.w3.org/2000/svg" width={p.size||16} height={p.size||16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>;
+const ChevronDown = (p) => <svg xmlns="http://www.w3.org/2000/svg" width={p.size||16} height={p.size||16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>;
+const Plus = (p) => <svg xmlns="http://www.w3.org/2000/svg" width={p.size||16} height={p.size||16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>;
+const X = (p) => <svg xmlns="http://www.w3.org/2000/svg" width={p.size||16} height={p.size||16} viewBox="0 0 24 24" fill="none" stroke={p.color||"currentColor"} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>;
+const Search = (p) => <svg xmlns="http://www.w3.org/2000/svg" width={p.size||16} height={p.size||16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>;
+const LogIn = (p) => <svg xmlns="http://www.w3.org/2000/svg" width={p.size||16} height={p.size||16} viewBox="0 0 24 24" fill="none" stroke={p.color||"currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>;
+const LogOut = (p) => <svg xmlns="http://www.w3.org/2000/svg" width={p.size||16} height={p.size||16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>;
+const Lock = (p) => <svg xmlns="http://www.w3.org/2000/svg" width={p.size||16} height={p.size||16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>;
+const User = (p) => <svg xmlns="http://www.w3.org/2000/svg" width={p.size||16} height={p.size||16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>;
+const Briefcase = (p) => <svg xmlns="http://www.w3.org/2000/svg" width={p.size||16} height={p.size||16} viewBox="0 0 24 24" fill="none" stroke={p.color||"currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>;
+const Users = (p) => <svg xmlns="http://www.w3.org/2000/svg" width={p.size||16} height={p.size||16} viewBox="0 0 24 24" fill="none" stroke={p.color||"currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>;
+const ShieldCheck = (p) => <svg xmlns="http://www.w3.org/2000/svg" width={p.size||16} height={p.size||16} viewBox="0 0 24 24" fill="none" stroke={p.color||"currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>;
+const Palmtree = (p) => <svg xmlns="http://www.w3.org/2000/svg" width={p.size||16} height={p.size||16} viewBox="0 0 24 24" fill="none" stroke={p.color||"currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 8c0-2.76-2.46-5-5.5-5S2 5.24 2 8h2l1-1 1 1h4"/><path d="M13 7.14A5.82 5.82 0 0 1 16.5 6c3.04 0 5.5 2.24 5.5 5h-3l-1-1-1 1h-3"/><path d="M5.89 9.71c-2.15 2.15-2.3 5.47-.35 7.43l4.24-4.25.7-.7.71-.71 2.12-2.12c-1.95-1.96-5.27-1.8-7.42.35z"/><path d="M11 15.5c.5 2.5-.17 4.5-1 6.5h4c2-5.5-.5-12-1-14"/></svg>;
+const Info = (p) => <svg xmlns="http://www.w3.org/2000/svg" width={p.size||16} height={p.size||16} viewBox="0 0 24 24" fill="none" stroke={p.color||"currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>;
+const Copy = (p) => <svg xmlns="http://www.w3.org/2000/svg" width={p.size||16} height={p.size||16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>;
+const ArrowRightCircle = (p) => <svg xmlns="http://www.w3.org/2000/svg" width={p.size||16} height={p.size||16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 8 16 12 12 16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>;
+const CopyPlus = (p) => <svg xmlns="http://www.w3.org/2000/svg" width={p.size||16} height={p.size||16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/><line x1="13" y1="13" x2="13" y2="17"/><line x1="11" y1="15" x2="15" y2="15"/></svg>;
+const ClipboardPaste = (p) => <svg xmlns="http://www.w3.org/2000/svg" width={p.size||16} height={p.size||16} viewBox="0 0 24 24" fill="none" stroke={p.color||"currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 2H9a1 1 0 0 0-1 1v2c0 .6.4 1 1 1h6c.6 0 1-.4 1-1V3c0-.6-.4-1-1-1z"/><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2M16 4h2a2 2 0 0 1 2 2v2"/><line x1="12" y1="12" x2="12" y2="18"/><line x1="9" y1="15" x2="15" y2="15"/></svg>;
+const CheckCircle2 = (p) => <svg xmlns="http://www.w3.org/2000/svg" width={p.size||16} height={p.size||16} viewBox="0 0 24 24" fill="none" stroke={p.color||"currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>;
+const Pencil = (p) => <svg xmlns="http://www.w3.org/2000/svg" width={p.size||16} height={p.size||16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>;
+const Trash2 = (p) => <svg xmlns="http://www.w3.org/2000/svg" width={p.size||16} height={p.size||16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>;
+const UserCog = (p) => <svg xmlns="http://www.w3.org/2000/svg" width={p.size||16} height={p.size||16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><circle cx="19" cy="19" r="3"/><path d="M19 16v1m0 4v1m-2.5-3.5.87-.5m3.26 2-.87.5M16.5 19l-.87-.5m4.13 0-.87.5"/></svg>;
+const RefreshCw = (p) => <svg xmlns="http://www.w3.org/2000/svg" width={p.size||16} height={p.size||16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>;
+const Printer = (p) => <svg xmlns="http://www.w3.org/2000/svg" width={p.size||16} height={p.size||16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>;
+const FilterIcon = (p) => <svg xmlns="http://www.w3.org/2000/svg" width={p.size||16} height={p.size||16} viewBox="0 0 24 24" fill="none" stroke={p.color||"currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>;
+
+const getWeekNumber = (d) => { const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())); const dayNum = date.getUTCDay() || 7; date.setUTCDate(date.getUTCDate() + 4 - dayNum); const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1)); return Math.ceil((((date - yearStart) / 86400000) + 1) / 7); };
+const getMonday = (d) => { const date = new Date(d); const day = date.getDay(); const diff = date.getDate() - day + (day === 0 ? -6 : 1); return new Date(date.setDate(diff)); };
+const formatDateISO = (date) => {
+  if (!date) return "";
+  try {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  } catch(e) { return ""; }
+};
+const DAYS_NAMES = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'];
+
+function Modal({ children, onClose, maxWidth = '480px', zIndex = 50 }) {
+  return (
+    <div onClick={onClose} style={{position:'fixed',inset:0,zIndex,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(0,0,0,0.6)',backdropFilter:'blur(4px)',padding:'16px'}}>
+      <div onClick={e => e.stopPropagation()} className="modal-anim" style={{background:'white',borderRadius:'24px',boxShadow:'0 25px 50px rgba(0,0,0,0.2)',width:'100%',maxWidth,border:'1px solid #e2e8f0',overflow:'hidden',maxHeight:'90vh',overflowY:'auto'}}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function InfoBox({ label, value }) {
+  return (
+    <div style={{background:'#f8fafc',padding:'12px',borderRadius:'16px',border:'1px solid #e2e8f0'}}>
+      <label className="label-form">{label}</label>
+      <p style={{fontWeight:900,textTransform:'uppercase',fontSize:'13px',color:'#1e293b',marginTop:'2px',whiteSpace:'pre-wrap',wordBreak:'break-word'}}>{value}</p>
+    </div>
+  );
+}
+
+function TaskCard({ task, highlight, isAdmin, onView, onToggle, onEdit, onCopy, onDelete }) {
+  const [hover, setHover] = useState(false);
+  const bg = highlight ? '#ccff00' : task.isAbsence ? '#fef3c7' : task.completed ? '#dcfce7' : 'white';
+  const border = highlight ? '#99cc00' : task.isAbsence ? '#fcd34d' : task.completed ? '#86efac' : '#bfdbfe';
+  return (
+    <div onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)} onClick={onView}
+      className="task-card" style={{background:bg,border:`1.5px solid ${border}`,borderRadius:'6px',padding:'4px 6px',position:'relative',cursor:'pointer'}}>
+      {hover && (
+        <div onClick={e => e.stopPropagation()} style={{position:'absolute',top:'2px',right:'2px',display:'flex',gap:'2px',background:'rgba(255,255,255,0.97)',borderRadius:'4px',padding:'2px',boxShadow:'0 1px 4px rgba(0,0,0,0.15)',zIndex:20}}>
+          <button onClick={onToggle} style={{padding:'2px',background:'none',border:'none',cursor:'pointer',color:task.completed?'#16a34a':'#cbd5e1',display:'flex'}}><CheckCircle2 size={11} /></button>
+          {isAdmin && !task.isAbsence && <button onClick={onEdit} style={{padding:'2px',background:'none',border:'none',cursor:'pointer',color:'#94a3b8',display:'flex'}}><Pencil size={11} /></button>}
+          {isAdmin && !task.isAbsence && <button onClick={onCopy} style={{padding:'2px',background:'none',border:'none',cursor:'pointer',color:'#94a3b8',display:'flex'}}><Copy size={11} /></button>}
+          {isAdmin && <button onClick={onDelete} style={{padding:'2px',background:'none',border:'none',cursor:'pointer',color:'#94a3b8',display:'flex'}}><Trash2 size={11} /></button>}
+        </div>
+      )}
+      <div style={{width:'100%'}}>
+        <div style={{fontWeight:900,color:'#1e293b',textTransform:'uppercase',fontSize:'12px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',paddingRight: hover ? '52px' : '0'}}>{task.id} - {task.customer}</div>
+        <div style={{fontSize:'11px',fontWeight:700,color:'#475569',textTransform:'uppercase',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',lineHeight:1,paddingRight: hover ? '52px' : '0'}}>{task.reference}</div>
+      </div>
+    </div>
+  );
+}
+
+function CellHover({ children, isH, isAdmin, clipboard, onNew, onPaste }) {
+  const [hover, setHover] = useState(false);
+  return (
+    <td onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+      style={{padding:'4px',verticalAlign:'top',borderRight:'1px solid #94a3b8',background:isH?'#fef2f2':'white',overflow:'hidden'}}>
+      <div style={{display:'flex',flexDirection:'column',gap:'4px'}}>
+        {children}
+        {isAdmin && hover && (
+          <div style={{marginTop:'auto',display:'flex',gap:'4px',paddingTop:'4px'}}>
+            <button onClick={onNew} style={{flex:1,padding:'4px',border:'1.5px dashed #cbd5e1',borderRadius:'6px',fontSize:'9px',fontWeight:900,textTransform:'uppercase',color:'#94a3b8',background:'none',cursor:'pointer'}}>+ NUEVO</button>
+            {clipboard && <button onClick={onPaste} style={{flex:1,padding:'4px',background:'#2563eb',borderRadius:'6px',color:'white',fontWeight:900,fontSize:'9px',textTransform:'uppercase',border:'none',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'4px'}}><ClipboardPaste size={10} color="white" /> PEGAR</button>}
+          </div>
+        )}
+      </div>
+    </td>
+  );
+}
+
+function TechRow({ t, weekDates, holidays, tasks, isAdmin, techWeekClipboard, clipboard, searchTerm, onNewTask, onPasteTask, onEditTask, onCopyTask, onDeleteTask, onToggleCompleted, onViewTask, onCopyTechWeek, onPasteTechWeek }) {
+  const [hovering, setHovering] = useState(false);
+  return (
+    <tr style={{borderBottom:'1px solid #94a3b8'}}>
+      <td style={{padding:'12px',background:'white',position:'sticky',left:0,zIndex:10,borderRight:'1px solid #94a3b8',boxShadow:'2px 0 4px rgba(0,0,0,0.05)',minWidth:'144px'}}>
+        <div onMouseEnter={() => setHovering(true)} onMouseLeave={() => setHovering(false)} style={{display:'flex',alignItems:'center',gap:'8px',position:'relative'}}>
+          <div style={{width:'10px',height:'10px',borderRadius:'50%',background:t.shiftType==='INTENSIVA'?'#22c55e':'#3b82f6',flexShrink:0}} />
+          <div style={{overflow:'hidden',paddingRight:'32px'}}>
+            <div style={{fontWeight:900,textTransform:'uppercase',fontSize:'13px',color:'#1e293b'}}>{t.name}</div>
+            <div style={{fontWeight:700,color:'#475569',fontSize:'12px',textTransform:'uppercase'}}>{t.surname}</div>
+          </div>
+          {isAdmin && hovering && (
+            <div style={{position:'absolute',right:0,top:0,display:'flex',gap:'2px',background:'rgba(255,255,255,0.9)',padding:'2px',borderRadius:'6px',boxShadow:'0 1px 3px rgba(0,0,0,0.1)',border:'1px solid #f1f5f9'}}>
+              <button onClick={() => onCopyTechWeek(t.id)} style={{padding:'4px',color:'#94a3b8',background:'none',border:'none',cursor:'pointer',display:'flex'}}><CopyPlus size={11} /></button>
+              {techWeekClipboard && <button onClick={() => onPasteTechWeek(t.id)} style={{padding:'4px',color:'white',background:'#2563eb',border:'none',cursor:'pointer',borderRadius:'4px',display:'flex'}}><ClipboardPaste size={11} /></button>}
+            </div>
+          )}
+        </div>
+      </td>
+      {weekDates.map((date, idx) => {
+        const dISO = formatDateISO(date), isH = holidays.includes(dISO);
+        const dayTasks = tasks.filter(tk => tk.techIds.includes(t.id) && tk.date === dISO);
+        const hasAbsence = dayTasks.some(tk => tk.isAbsence);
+        // Celda vacía = sin tareas Y (no es festivo O no hay ausencia)
+        const isEmpty = dayTasks.length === 0 && !hasAbsence;
+        return (
+          <CellHover key={idx} isH={isH} isAdmin={isAdmin} clipboard={clipboard}
+            onNew={() => onNewTask(t.id, date)} onPaste={() => onPasteTask(t.id, dISO)}>
+            {isEmpty ? (
+              <div style={{display:'flex',alignItems:'center',justifyContent:'center',padding:'16px',color:'#dc2626',fontWeight:900,fontSize:'10px',textTransform:'uppercase',textAlign:'center'}}>
+                <span className="animate-pulse">SIN TAREA ASIGNADA</span>
+              </div>
+            ) : (
+              dayTasks.map(task => {
+                const highlight = searchTerm && task.id.includes(searchTerm);
+                return (
+                  <TaskCard key={task.internalId} task={task} highlight={highlight} isAdmin={isAdmin}
+                    onView={() => onViewTask(task)} onToggle={() => onToggleCompleted(task.internalId)}
+                    onEdit={() => onEditTask(task)} onCopy={() => onCopyTask(task)} onDelete={() => onDeleteTask(task.internalId)} />
+                );
+              })
+            )}
+          </CellHover>
+        );
+      })}
+    </tr>
+  );
+}
+
+function App() {
+  const [user, setUser] = useState(null);
+  const [loginError, setLoginError] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [currentMonday, setCurrentMonday] = useState(getMonday(new Date()));
+  const [techs, setTechs] = useState([]);
+  const [admins, setAdmins] = useState([]);
+  const [holidays, setHolidays] = useState([]);
+  const [tasks, setTasks] = useState([]);
+  const [modalMode, setModalMode] = useState(null);
+  const [selectedTask, setSelectedTask] = useState(null);
+  const [editingTask, setEditingTask] = useState(null);
+  const [editingUser, setEditingUser] = useState(null);
+  const [userFormRole, setUserFormRole] = useState('tech');
+  const [selectedSlot, setSelectedSlot] = useState(null);
+  const [showTechDropdown, setShowTechDropdown] = useState(false);
+  const [tempAssignedTechs, setTempAssignedTechs] = useState([]);
+  const [clipboard, setClipboard] = useState(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [techWeekClipboard, setTechWeekClipboard] = useState(null);
+  const [fullQuadrantClipboard, setFullQuadrantClipboard] = useState(null);
+  const [formTaskId, setFormTaskId] = useState("");
+  const [reorderList, setReorderList] = useState([]);
+  const [dragIdx, setDragIdx] = useState(null);
+  const [formCustomer, setFormCustomer] = useState("");
+  const [formReference, setFormReference] = useState("");
+
+  const isAdmin = useMemo(() => user?.role === 'admin', [user]);
+
+  const loadAll = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [{ data: td }, { data: ad }, { data: hd }, { data: tkd }] = await Promise.all([
+        sb.from('techs').select('*').order('sort_order', { ascending: true }).order('id'),
+        sb.from('admins').select('*').order('id'),
+        sb.from('holidays').select('*'),
+        sb.from('tasks').select('*'),
+      ]);
+      setTechs((td || []).map(dbTechToLocal));
+      setAdmins(ad || []);
+      setHolidays((hd || []).map(h => h.date));
+      setTasks((tkd || []).map(dbTaskToLocal));
+    } catch(e) { console.error(e); }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { loadAll(); }, [loadAll]);
+
+  // Tiempo real
+  useEffect(() => {
+    const ch = sb.channel('obraplan-rt')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => {
+        sb.from('tasks').select('*').then(({ data }) => { if (data) setTasks(data.map(dbTaskToLocal)); });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'techs' }, () => {
+        sb.from('techs').select('*').order('sort_order', { ascending: true }).order('id').then(({ data }) => { if (data) setTechs(data.map(dbTechToLocal)); });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'holidays' }, () => {
+        sb.from('holidays').select('*').then(({ data }) => { if (data) setHolidays(data.map(h => h.date)); });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'admins' }, () => {
+        sb.from('admins').select('*').then(({ data }) => { if (data) setAdmins(data); });
+      })
+      .subscribe();
+    return () => sb.removeChannel(ch);
+  }, []);
+
+  const handleLogin = (e) => {
+    e.preventDefault();
+    const u = e.target.username.value, p = e.target.password.value;
+    const fa = admins.find(a => a.username === u && a.password === p);
+    if (fa) { setUser(fa); setLoginError(""); return; }
+    const ft = techs.find(t => t.username === u && t.password === p);
+    if (ft) { setUser(ft); setLoginError(""); return; }
+    setLoginError("Usuario o contraseña incorrectos");
+  };
+
+  const weekDates = useMemo(() => Array.from({ length: 5 }, (_, i) => { const d = new Date(currentMonday); d.setDate(currentMonday.getDate() + i); return d; }), [currentMonday]);
+  const weekNum = useMemo(() => getWeekNumber(currentMonday), [currentMonday]);
+
+  const handleIdChange = (val) => {
+    const upperId = val.toUpperCase(); setFormTaskId(upperId);
+    const ex = tasks.find(t => t.id === upperId && !t.isAbsence);
+    if (ex) { setFormCustomer(ex.customer); setFormReference(ex.reference); }
+  };
+
+  const handleOpenNewTask = (techId, date) => {
+    setSelectedSlot({ techId, dateISO: formatDateISO(date) }); setTempAssignedTechs([techId]);
+    setEditingTask(null); setFormTaskId(""); setFormCustomer(""); setFormReference(""); setModalMode('task');
+  };
+
+  const handleSaveTask = async (e) => {
+    e.preventDefault(); setSaving(true);
+    const instructions = e.target.instructions ? e.target.instructions.value : '';
+    const fi = e.target.file;
+    const fileName = (fi && fi.files && fi.files[0]) ? fi.files[0].name : (editingTask?.fileName || null);
+    const taskData = { internalId: editingTask?.internalId || newId(), id: formTaskId, customer: formCustomer, reference: formReference, instructions, date: selectedSlot.dateISO, techIds: tempAssignedTechs, completed: editingTask?.completed || false, isAbsence: false, fileName };
+    let err = null;
+    if (editingTask) { const r = await sb.from('tasks').update(localTaskToDB(taskData)).eq('internal_id', editingTask.internalId); err = r.error; }
+    else { const r = await sb.from('tasks').insert(localTaskToDB(taskData)); err = r.error; }
+    setSaving(false);
+    if (err) { alert('Error al guardar tarea: ' + err.message); return; }
+    closeModal();
+  };
+
+  const toggleTaskCompleted = async (id) => {
+    const task = tasks.find(t => t.internalId === id); if (!task) return;
+    const nv = !task.completed;
+    setTasks(tasks.map(t => t.internalId === id ? { ...t, completed: nv } : t));
+    if (selectedTask?.internalId === id) setSelectedTask(prev => ({ ...prev, completed: nv }));
+    await sb.from('tasks').update({ completed: nv }).eq('internal_id', id);
+  };
+
+  const handleDeleteTask = async (id) => {
+    setTasks(tasks.filter(t => t.internalId !== id));
+    await sb.from('tasks').delete().eq('internal_id', id);
+  };
+
+  const copyTechWeek = (techId) => {
+    const dates = weekDates.map(d => formatDateISO(d));
+    setTechWeekClipboard({ techId, tasks: tasks.filter(t => t.techIds.includes(techId) && dates.includes(t.date) && !t.isAbsence), sourceMonday: formatDateISO(currentMonday) });
+  };
+
+  const pasteTechWeek = async (targetTechId) => {
+    if (!techWeekClipboard) return;
+    const targetMondayStr = formatDateISO(currentMonday);
+    const sourceMondayStr = techWeekClipboard.sourceMonday;
+    // Calcular offset en días entre las dos semanas
+    const srcDate = new Date(sourceMondayStr + 'T12:00:00');
+    const tgtDate = new Date(targetMondayStr + 'T12:00:00');
+    const diffDays = Math.round((tgtDate - srcDate) / 86400000);
+    const newTasks = techWeekClipboard.tasks.map(t => {
+      const oldDate = new Date(t.date + 'T12:00:00');
+      oldDate.setDate(oldDate.getDate() + diffDays);
+      const newDate = formatDateISO(oldDate);
+      return { ...t, internalId: newId(), date: newDate, techIds: [targetTechId], completed: false };
+    }).filter(t => !tasks.some(x => x.techIds.includes(targetTechId) && x.date === t.date && x.isAbsence));
+    if (newTasks.length) {
+      const { error } = await sb.from('tasks').insert(newTasks.map(localTaskToDB));
+      if (error) alert('Error al pegar: ' + error.message);
+    }
+    setTechWeekClipboard(null);
+  };
+
+  const copyFullQuadrant = () => {
+    const dates = weekDates.map(d => formatDateISO(d));
+    setFullQuadrantClipboard({ tasks: tasks.filter(t => dates.includes(t.date) && !t.isAbsence), sourceMonday: formatDateISO(currentMonday) });
+  };
+
+  const pasteFullQuadrant = async () => {
+    if (!fullQuadrantClipboard) return;
+    const targetMondayStr = formatDateISO(currentMonday);
+    const srcDate = new Date(fullQuadrantClipboard.sourceMonday + 'T12:00:00');
+    const tgtDate = new Date(targetMondayStr + 'T12:00:00');
+    const diffDays = Math.round((tgtDate - srcDate) / 86400000);
+    const newTasks = fullQuadrantClipboard.tasks.map(t => {
+      const oldDate = new Date(t.date + 'T12:00:00');
+      oldDate.setDate(oldDate.getDate() + diffDays);
+      const newDate = formatDateISO(oldDate);
+      return { ...t, internalId: newId(), date: newDate, completed: false };
+    }).filter(t => !t.techIds.some(tid => tasks.some(x => x.techIds.includes(tid) && x.date === t.date && x.isAbsence)));
+    if (newTasks.length) {
+      const { error } = await sb.from('tasks').insert(newTasks.map(localTaskToDB));
+      if (error) alert('Error al pegar cuadrante: ' + error.message);
+    }
+    setFullQuadrantClipboard(null);
+  };
+
+  const handleSaveAbsence = async (e) => {
+    e.preventDefault(); setSaving(true);
+    const tId = parseInt(e.target.techId.value), type = e.target.absenceType.value.toUpperCase();
+    let curr = new Date(e.target.startDate.value + 'T00:00:00'), end = new Date(e.target.endDate.value + 'T00:00:00'), abs = [];
+    while (curr <= end) {
+      // Incluir lunes a viernes (1-5), ignorar solo sábado(6) y domingo(0)
+      // Los festivos SÍ se incluyen para mostrar ausencias
+      const day = curr.getDay();
+      if (day !== 0 && day !== 6) {
+        abs.push({ internalId: newId() + abs.length, id: type, customer: type, reference: "EVENTO CALENDARIO", date: formatDateISO(curr), techIds: [tId], isAbsence: true, completed: false, fileName: null, instructions: '' });
+      }
+      curr.setDate(curr.getDate() + 1);
+    }
+    if (abs.length) {
+      const { error } = await sb.from('tasks').insert(abs.map(localTaskToDB));
+      if (error) { alert('Error al guardar ausencia: ' + error.message); setSaving(false); return; }
+    }
+    setSaving(false); closeModal();
+  };
+
+  const closeModal = () => { setModalMode(null); setEditingTask(null); setEditingUser(null); setSelectedTask(null); setTempAssignedTechs([]); setShowTechDropdown(false); };
+
+  const handleClearWeek = async () => {
+    if (!window.confirm('¿Borrar TODAS las tareas de esta semana? Esta acción no se puede deshacer.')) return;
+    const dates = weekDates.map(d => formatDateISO(d));
+    const toDelete = tasks.filter(t => dates.includes(t.date));
+    for (const t of toDelete) {
+      await sb.from('tasks').delete().eq('internal_id', t.internalId);
+    }
+  };
+
+  const openReorder = () => { setReorderList([...techs].sort((a,b) => a.sortOrder - b.sortOrder)); setModalMode('reorder'); };
+
+  const handleDragStart = (idx) => setDragIdx(idx);
+  const handleDragOver = (e, idx) => {
+    e.preventDefault();
+    if (dragIdx === null || dragIdx === idx) return;
+    const newList = [...reorderList];
+    const item = newList.splice(dragIdx, 1)[0];
+    newList.splice(idx, 0, item);
+    setReorderList(newList);
+    setDragIdx(idx);
+  };
+  const handleDragEnd = () => setDragIdx(null);
+
+  const saveReorder = async () => {
+    setSaving(true);
+    for (let i = 0; i < reorderList.length; i++) {
+      await sb.from('techs').update({ sort_order: i + 1 }).eq('id', reorderList[i].id);
+    }
+    setSaving(false);
+    closeModal();
+  };
+
+  const handleEditTask = (task) => {
+    if (!isAdmin) return;
+    setEditingTask(task); setFormTaskId(task.id); setFormCustomer(task.customer); setFormReference(task.reference);
+    setSelectedSlot({ techId: task.techIds[0], dateISO: task.date }); setTempAssignedTechs(task.techIds); setModalMode('task');
+  };
+
+  const handleCopyTask = (task) => { if (!task.isAbsence) setClipboard(task); };
+
+  const handlePasteTask = async (techId, dateISO) => {
+    if (!clipboard || tasks.some(x => x.techIds.includes(techId) && x.date === dateISO && x.isAbsence)) return;
+    await sb.from('tasks').insert(localTaskToDB({ ...clipboard, internalId: newId(), date: dateISO, techIds: [techId] }));
+  };
+
+  const handleAddHoliday = async (e) => {
+    e.preventDefault();
+    const date = e.target.holidayDate.value;
+    if (date && !holidays.includes(date)) await sb.from('holidays').insert({ date });
+    setModalMode(null);
+  };
+
+  const handleDeleteHoliday = async (date) => {
+    if (!window.confirm(`¿Eliminar festivo ${date}?`)) return;
+    await sb.from('holidays').delete().eq('date', date);
+  };
+
+  const openUserForm = (role, u = null) => { setUserFormRole(role); setEditingUser(u); setModalMode('userForm'); };
+
+  const handleCreateOrUpdateUser = async (e) => {
+    e.preventDefault(); setSaving(true);
+    const formName = e.target.userName.value.toUpperCase();
+    const formSurname = e.target.userSurname.value.toUpperCase();
+    const formUsername = e.target.userUsername.value;
+    const formPassword = e.target.userPassword.value;
+    const data = { id: editingUser?.id || newSmallId(), name: formName, surname: formSurname, username: formUsername, password: formPassword, role: userFormRole };
+    let error = null;
+    if (userFormRole === 'tech') {
+      const td = { ...data, shift_type: e.target.shiftType ? e.target.shiftType.value : 'NORMAL' };
+      if (editingUser) { const r = await sb.from('techs').update(td).eq('id', editingUser.id); error = r.error; }
+      else { const r = await sb.from('techs').insert(td); error = r.error; }
+    } else {
+      if (editingUser) { const r = await sb.from('admins').update(data).eq('id', editingUser.id); error = r.error; }
+      else { const r = await sb.from('admins').insert(data); error = r.error; }
+    }
+    setSaving(false);
+    if (error) { alert('Error al guardar: ' + error.message); return; }
+    setModalMode(userFormRole === 'tech' ? 'techList' : 'adminList');
+  };
+
+  const handleDeleteUser = async (u) => {
+    if (!window.confirm(`¿Eliminar a ${u.name} ${u.surname}?`)) return;
+    if (u.role === 'tech') await sb.from('techs').delete().eq('id', u.id);
+    else await sb.from('admins').delete().eq('id', u.id);
+  };
+
+  const changeWeek = (w) => { const n = new Date(currentMonday); n.setDate(currentMonday.getDate() + w*7); setCurrentMonday(n); };
+  const toggleTechInTask = (id) => { if (tempAssignedTechs.includes(id)) { if (tempAssignedTechs.length > 1) setTempAssignedTechs(tempAssignedTechs.filter(x => x !== id)); } else setTempAssignedTechs([...tempAssignedTechs, id]); };
+  const visibleTechs = useMemo(() => { if (!user) return []; return isAdmin ? techs : techs.filter(t => t.id === user.id); }, [user, techs, isAdmin]);
+
+  // CARGA
+  if (loading) return (
+    <div style={{minHeight:'100vh',background:'#0f172a',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:'24px'}}>
+      <div style={{marginBottom:'8px',padding:'12px 20px',background:'white',borderRadius:'12px'}}>
+        <img src="logo.jpg" style={{height:'40px',objectFit:'contain'}} alt="Logo" />
+      </div>
+      <div className="spinner"></div>
+      <p style={{color:'rgba(255,255,255,0.5)',fontSize:'11px',fontWeight:700,textTransform:'uppercase',letterSpacing:'3px'}}>Conectando...</p>
+    </div>
+  );
+
+  // LOGIN
+  if (!user) return (
+    <div style={{minHeight:'100vh',background:'#0f172a',display:'flex',alignItems:'center',justifyContent:'center',padding:'16px'}}>
+      <div style={{background:'white',borderRadius:'24px',boxShadow:'0 25px 50px rgba(0,0,0,0.4)',width:'100%',maxWidth:'380px',overflow:'hidden'}}>
+        <div style={{background:'#2563eb',padding:'32px',display:'flex',flexDirection:'column',alignItems:'center',color:'white',textAlign:'center'}}>
+          <div style={{marginBottom:'16px',padding:'8px 16px',background:'white',borderRadius:'12px'}}>
+            <img src="logo.jpg" style={{height:'48px',objectFit:'contain'}} alt="Logo" />
+          </div>
+          <p style={{fontSize:'10px',fontWeight:700,textTransform:'uppercase',letterSpacing:'3px',marginTop:'4px',opacity:0.8}}>Control de Accesos</p>
+        </div>
+        <form onSubmit={handleLogin} style={{padding:'32px',display:'flex',flexDirection:'column',gap:'16px'}}>
+          {loginError && <div style={{background:'#fef2f2',color:'#dc2626',fontSize:'11px',fontWeight:700,padding:'12px',borderRadius:'12px',border:'1px solid #fee2e2',textAlign:'center',textTransform:'uppercase'}}>{loginError}</div>}
+          <div><label className="label-form">Usuario</label><div style={{position:'relative'}}><span style={{position:'absolute',left:'12px',top:'10px',color:'#94a3b8'}}><User size={16} /></span><input required name="username" style={{width:'100%',paddingLeft:'40px',paddingRight:'16px',paddingTop:'10px',paddingBottom:'10px',background:'#f8fafc',border:'1px solid #e2e8f0',borderRadius:'12px',outline:'none',fontSize:'13px'}} placeholder="usuario" /></div></div>
+          <div><label className="label-form">Contraseña</label><div style={{position:'relative'}}><span style={{position:'absolute',left:'12px',top:'10px',color:'#94a3b8'}}><Lock size={16} /></span><input required name="password" type="password" style={{width:'100%',paddingLeft:'40px',paddingRight:'16px',paddingTop:'10px',paddingBottom:'10px',background:'#f8fafc',border:'1px solid #e2e8f0',borderRadius:'12px',outline:'none',fontSize:'13px'}} placeholder="••••••••" /></div></div>
+          <button type="submit" style={{width:'100%',background:'#2563eb',color:'white',fontWeight:900,padding:'14px',borderRadius:'16px',border:'none',cursor:'pointer',fontSize:'12px',textTransform:'uppercase',letterSpacing:'2px',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px'}}>Entrar <LogIn size={16} color="white" /></button>
+        </form>
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{minHeight:'100vh',background:'#f8fafc',fontFamily:'Arial,sans-serif',fontSize:'12px'}}>
+      {saving && <div style={{position:'fixed',top:0,left:0,right:0,zIndex:100,background:'#2563eb',color:'white',textAlign:'center',padding:'5px',fontSize:'10px',fontWeight:900,textTransform:'uppercase',letterSpacing:'2px'}}>Guardando...</div>}
+      <header style={{position:'sticky',top:0,zIndex:30,background:'white',borderBottom:'1px solid #94a3b8',boxShadow:'0 1px 3px rgba(0,0,0,0.1)'}}>
+        <div style={{maxWidth:'1800px',margin:'0 auto',padding:'10px 16px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:'16px',flexWrap:'wrap'}}>
+          <div style={{display:'flex',alignItems:'center',gap:'16px',flexWrap:'wrap'}}>
+            <div style={{display:'flex',alignItems:'center'}}>
+              <img src="logo.jpg" style={{height:'38px',objectFit:'contain'}} alt="Logo" />
+            </div>
+            <div style={{display:'flex',alignItems:'center',background:'#f1f5f9',borderRadius:'12px',padding:'0 4px',border:'1px solid #cbd5e1',height:'34px'}}>
+              <button onClick={() => changeWeek(-1)} style={{padding:'4px',background:'none',border:'none',cursor:'pointer',borderRadius:'8px',display:'flex'}}><ChevronLeft size={16} /></button>
+              <div style={{padding:'0 8px',display:'flex',alignItems:'center',gap:'6px',whiteSpace:'nowrap'}}>
+                <span style={{fontSize:'11px',fontWeight:900,color:'#2563eb',textTransform:'uppercase'}}>S{weekNum}</span>
+                <span style={{fontWeight:700,fontSize:'11px',color:'#475569',textTransform:'uppercase'}}>{weekDates[0]?.toLocaleDateString('es-ES',{day:'2-digit',month:'short'})} - {weekDates[4]?.toLocaleDateString('es-ES',{day:'2-digit',month:'short'})}</span>
+              </div>
+              <button onClick={() => changeWeek(1)} style={{padding:'4px',background:'none',border:'none',cursor:'pointer',borderRadius:'8px',display:'flex'}}><ChevronRight size={16} /></button>
+            </div>
+            <div style={{position:'relative'}}>
+              <span style={{position:'absolute',left:'10px',top:'9px',color:'#94a3b8'}}><Search size={14} /></span>
+              <input type="text" placeholder="BUSCAR ID..." style={{paddingLeft:'32px',paddingRight:'16px',paddingTop:'0',paddingBottom:'0',height:'34px',background:'#f1f5f9',border:'1px solid #cbd5e1',borderRadius:'12px',fontSize:'11px',fontWeight:900,textTransform:'uppercase',outline:'none',width:'160px'}} value={searchTerm} onChange={e => setSearchTerm(e.target.value.toUpperCase())} />
+            </div>
+          </div>
+          <div style={{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap'}}>
+            {isAdmin && (<>
+              <button onClick={copyFullQuadrant} className="btn-header"><Copy size={13} /> COPIAR</button>
+              {fullQuadrantClipboard && <button onClick={pasteFullQuadrant} className="btn-header" style={{background:'#2563eb',color:'white',border:'none'}}><ArrowRightCircle size={13} /> PEGAR</button>}
+              <div style={{width:'1px',height:'24px',background:'#cbd5e1',margin:'0 4px'}} />
+              <button onClick={() => setModalMode('techList')} className="btn-header"><Users size={13} color="#2563eb" /> TÉCNICOS</button>
+              <button onClick={() => setModalMode('adminList')} className="btn-header"><ShieldCheck size={13} color="#7c3aed" /> ADMINS</button>
+              <button onClick={() => setModalMode('holiday')} className="btn-header"><Palmtree size={13} color="#dc2626" /> FESTIVOS</button>
+              <button onClick={() => setModalMode('others')} className="btn-header"><Info size={13} color="#d97706" /> OTROS</button>
+              <button onClick={loadAll} className="btn-header" title="Recargar"><RefreshCw size={13} /></button>
+              <button onClick={() => window.print()} className="btn-header no-print" style={{padding:'6px 8px'}} title="Imprimir A4 horizontal"><Printer size={15} /></button>
+              <button onClick={handleClearWeek} className="btn-header no-print" style={{padding:'6px 8px',color:'#dc2626',borderColor:'#fca5a5'}} title="Borrar toda la semana"><Trash2 size={15} /></button>
+              <button onClick={openReorder} className="btn-header no-print" style={{padding:'6px 8px'}} title="Ordenar técnicos"><FilterIcon size={15} color="#2563eb" /></button>
+            </>)}
+            <div style={{width:'1px',height:'24px',background:'#cbd5e1',margin:'0 4px'}} />
+            <div style={{textAlign:'right',marginRight:'8px',lineHeight:1}}>
+              <p style={{fontSize:'10px',fontWeight:900,color:'#1e293b',textTransform:'uppercase'}}>{user?.name} {user?.surname}</p>
+              <p style={{fontSize:'9px',fontWeight:700,color:'#94a3b8',textTransform:'uppercase',marginTop:'3px'}}>{user?.role==='admin'?'Administrador':'Técnico'}</p>
+            </div>
+            <button onClick={() => setUser(null)} style={{padding:'8px',color:'#94a3b8',background:'#f1f5f9',borderRadius:'12px',border:'none',cursor:'pointer',display:'flex'}}><LogOut size={18} /></button>
+          </div>
+        </div>
+      </header>
+
+      <main style={{padding:'16px'}}>
+        {/* MOBILE VIEW - only for tech, shown on small screens */}
+        {!isAdmin && (
+          <div className="mobile-cards" style={{flexDirection:'column',gap:'12px',display:'none'}}>
+            {weekDates.map((date, dIdx) => {
+              const dISO = formatDateISO(date);
+              const isH = holidays.includes(dISO);
+              const dayTasks = tasks.filter(tk => tk.techIds.includes(user.id) && tk.date === dISO);
+              return (
+                <div key={dIdx} style={{background:'white',borderRadius:'16px',border:`2px solid ${isH?'#fca5a5':'#cbd5e1'}`,overflow:'hidden',boxShadow:'0 2px 8px rgba(0,0,0,0.06)'}}>
+                  <div style={{padding:'10px 14px',background:isH?'#fee2e2':'#f1f5f9',borderBottom:`1px solid ${isH?'#fca5a5':'#e2e8f0'}`,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                    <span style={{fontWeight:900,fontSize:'13px',textTransform:'uppercase',color:isH?'#991b1b':'#1e293b'}}>{DAYS_NAMES[dIdx]} {date.getDate()}</span>
+                    {isH && <span style={{fontSize:'10px',fontWeight:700,color:'#ef4444',textTransform:'uppercase'}}>Festivo</span>}
+                  </div>
+                  <div style={{padding:'10px',display:'flex',flexDirection:'column',gap:'8px'}}>
+                    {dayTasks.length === 0 ? (
+                      <div style={{textAlign:'center',padding:'16px',color:'#dc2626',fontWeight:900,fontSize:'11px',textTransform:'uppercase'}} className="animate-pulse">SIN TAREA ASIGNADA</div>
+                    ) : dayTasks.map(task => (
+                      <div key={task.internalId} onClick={() => { setSelectedTask(task); setModalMode('viewTask'); }}
+                        style={{padding:'12px',borderRadius:'12px',border:`1.5px solid ${task.isAbsence?'#fcd34d':task.completed?'#86efac':'#bfdbfe'}`,background:task.isAbsence?'#fef3c7':task.completed?'#dcfce7':'#eff6ff',cursor:'pointer'}}>
+                        <div style={{fontWeight:900,fontSize:'13px',color:'#1e293b',textTransform:'uppercase'}}>{task.id} - {task.customer}</div>
+                        <div style={{fontSize:'12px',color:'#475569',fontWeight:700,textTransform:'uppercase',marginTop:'2px'}}>{task.reference}</div>
+                        {task.completed && <div style={{marginTop:'6px',display:'inline-flex',alignItems:'center',gap:'4px',background:'#16a34a',color:'white',borderRadius:'6px',padding:'2px 8px',fontSize:'10px',fontWeight:900}}><CheckCircle2 size={10} color="white" /> COMPLETADO</div>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {/* DESKTOP TABLE */}
+        <div className="desktop-table" style={{overflowX:'auto'}}>
+        <div className="main-card" style={{maxWidth:'1800px',margin:'0 auto',background:'white',borderRadius:'16px',border:'2px solid #94a3b8',boxShadow:'0 10px 25px rgba(0,0,0,0.1)',overflow:'hidden'}}>
+          <table style={{width:'100%',borderCollapse:'collapse',minWidth:'1000px',tableLayout:'fixed'}}>
+            <thead>
+              <tr style={{background:'#f1f5f9',borderBottom:'1px solid #94a3b8'}}>
+                <th style={{width:'144px',padding:'12px',textAlign:'left',fontSize:'11px',fontWeight:900,textTransform:'uppercase',color:'#475569',position:'sticky',left:0,background:'#f1f5f9',zIndex:20,borderRight:'1px solid #94a3b8'}}>Equipo</th>
+                {weekDates.map((date, idx) => { const isH = holidays.includes(formatDateISO(date)); return (
+                  <th key={idx} style={{padding:'8px',textAlign:'center',borderRight:idx<4?'1px solid #94a3b8':'none',background:isH?'#fecaca':'transparent',overflow:'hidden'}}>
+                    <div style={{fontWeight:900,textTransform:'uppercase',color:isH?'#991b1b':'#64748b',whiteSpace:'nowrap',fontSize:'11px'}}>
+                      {DAYS_NAMES[idx]} <span style={{fontSize:'15px'}}>{date.getDate()}</span>
+                    </div>
+                  </th>
+                ); })}
+              </tr>
+            </thead>
+            <tbody>
+              {visibleTechs.map(t => (
+                <TechRow key={t.id} t={t} weekDates={weekDates} holidays={holidays} tasks={tasks} isAdmin={isAdmin}
+                  techWeekClipboard={techWeekClipboard} clipboard={clipboard} searchTerm={searchTerm}
+                  onNewTask={handleOpenNewTask} onPasteTask={handlePasteTask} onEditTask={handleEditTask}
+                  onCopyTask={handleCopyTask} onDeleteTask={handleDeleteTask} onToggleCompleted={toggleTaskCompleted}
+                  onViewTask={(task) => { setSelectedTask(task); setModalMode('viewTask'); }}
+                  onCopyTechWeek={copyTechWeek} onPasteTechWeek={pasteTechWeek} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+        </div>
+      </main>
+
+      {modalMode === 'viewTask' && selectedTask && (
+        <Modal onClose={closeModal}>
+          <div style={{padding:'20px',borderBottom:'1px solid #e2e8f0',display:'flex',justifyContent:'space-between',alignItems:'center',background:'#f8fafc'}}>
+            <div><h3 style={{fontWeight:900,textTransform:'uppercase',fontSize:'13px',letterSpacing:'2px',color:'#1e293b',margin:0}}>Detalle de Obra</h3><p style={{fontSize:'10px',fontWeight:700,color:'#2563eb',marginTop:'4px',textTransform:'uppercase'}}>{selectedTask.date}</p></div>
+            <button onClick={closeModal} style={{padding:'4px',background:'none',border:'none',cursor:'pointer'}}><X size={20} /></button>
+          </div>
+          <div style={{padding:'24px',display:'flex',flexDirection:'column',gap:'16px'}}>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px'}}><InfoBox label="ID Tarea" value={selectedTask.id} /><InfoBox label="Cliente" value={selectedTask.customer} /></div>
+            <InfoBox label="Referencia" value={selectedTask.reference} />
+            <InfoBox label="Instrucciones" value={selectedTask.instructions || 'Sin instrucciones adicionales.'} />
+            <button onClick={() => { toggleTaskCompleted(selectedTask.internalId); closeModal(); }} style={{width:'100%',padding:'14px',borderRadius:'16px',fontWeight:900,textTransform:'uppercase',color:'white',border:'none',cursor:'pointer',fontSize:'13px',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px',background:selectedTask.completed?'#f59e0b':'#16a34a'}}>
+              {selectedTask.completed ? <><X size={18} color="white" /> Pendiente</> : <><CheckCircle2 size={18} color="white" /> Completado</>}
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {modalMode === 'task' && (
+        <Modal onClose={closeModal} maxWidth="520px">
+          <div style={{padding:'20px',borderBottom:'1px solid #e2e8f0',display:'flex',justifyContent:'space-between',alignItems:'center',background:'#f8fafc'}}>
+            <h3 style={{fontWeight:900,textTransform:'uppercase',fontSize:'13px',letterSpacing:'2px',color:'#1e293b',margin:0}}>{editingTask ? 'Editar Tarea' : 'Nueva Tarea'}</h3>
+            <button onClick={closeModal} style={{background:'none',border:'none',cursor:'pointer'}}><X size={20} /></button>
+          </div>
+          <form onSubmit={handleSaveTask} style={{padding:'24px',display:'flex',flexDirection:'column',gap:'16px'}}>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px'}}>
+              <div><label className="label-form">ID Tarea</label><input required className="input-form" style={{textTransform:'uppercase'}} value={formTaskId} onChange={e => handleIdChange(e.target.value)} placeholder="000-00" /></div>
+              <div><label className="label-form">Cliente</label><input required className="input-form" style={{textTransform:'uppercase'}} value={formCustomer} onChange={e => setFormCustomer(e.target.value.toUpperCase())} placeholder="NOMBRE" /></div>
+            </div>
+            <div><label className="label-form">Referencia de Obra</label><input required className="input-form" style={{textTransform:'uppercase',fontSize:'11px'}} value={formReference} onChange={e => setFormReference(e.target.value.toUpperCase())} placeholder="REFERENCIA" /></div>
+            <div style={{position:'relative'}}>
+              <label className="label-form">Asignado a:</label>
+              <div onClick={() => setShowTechDropdown(!showTechDropdown)} style={{marginTop:'4px',width:'100%',padding:'8px 12px',background:'#f8fafc',border:'1px solid #cbd5e1',borderRadius:'10px',display:'flex',alignItems:'center',justifyContent:'space-between',cursor:'pointer'}}>
+                <div style={{display:'flex',flexWrap:'wrap',gap:'4px'}}>
+                  {tempAssignedTechs.map(id => (<span key={id} style={{padding:'2px 8px',background:'#2563eb',color:'white',fontSize:'10px',fontWeight:900,borderRadius:'6px',display:'flex',alignItems:'center',gap:'4px',textTransform:'uppercase'}}>{techs.find(x => x.id === id)?.name}<span onClick={e => { e.stopPropagation(); toggleTechInTask(id); }} style={{cursor:'pointer',display:'flex'}}><X size={10} color="white" /></span></span>))}
+                </div>
+                <ChevronDown size={14} style={{color:'#94a3b8'}} />
+              </div>
+              {showTechDropdown && (<div style={{position:'absolute',zIndex:40,marginTop:'4px',width:'100%',background:'white',border:'1px solid #e2e8f0',borderRadius:'12px',boxShadow:'0 10px 25px rgba(0,0,0,0.1)',padding:'8px',maxHeight:'160px',overflowY:'auto'}}>{techs.map(t => (<div key={t.id} onClick={() => toggleTechInTask(t.id)} style={{padding:'8px 10px',borderRadius:'8px',cursor:'pointer',fontSize:'12px',fontWeight:700,background:tempAssignedTechs.includes(t.id)?'#eff6ff':'transparent',color:tempAssignedTechs.includes(t.id)?'#1d4ed8':'#334155'}}>{t.name} {t.surname}</div>))}</div>)}
+            </div>
+            <div><label className="label-form">Instrucciones</label><textarea className="input-form" name="instructions" defaultValue={editingTask?.instructions} placeholder="Detalles..." style={{height:'80px',resize:'none'}} /></div>
+            <div>
+              <label className="label-form">Adjuntar PDF</label>
+              <input type="file" name="file" accept=".pdf" style={{display:'block',width:'100%',fontSize:'11px',color:'#64748b',marginTop:'4px'}} />
+              {editingTask?.fileName && <p style={{fontSize:'10px',color:'#2563eb',marginTop:'4px',fontWeight:700}}>Archivo actual: {editingTask.fileName}</p>}
+            </div>
+            <button type="submit" disabled={saving} style={{width:'100%',background:'#2563eb',color:'white',fontWeight:900,padding:'14px',borderRadius:'16px',border:'none',cursor:'pointer',textTransform:'uppercase',fontSize:'12px',letterSpacing:'2px',opacity:saving?0.7:1}}>{saving ? 'Guardando...' : 'Guardar Tarea'}</button>
+          </form>
+        </Modal>
+      )}
+
+      {(modalMode === 'techList' || modalMode === 'adminList') && (
+        <Modal onClose={closeModal} maxWidth="640px">
+          <div style={{padding:'16px',borderBottom:'1px solid #e2e8f0',display:'flex',alignItems:'center',justifyContent:'space-between',background:'#f8fafc'}}>
+            <h3 style={{fontWeight:900,color:'#1e293b',textTransform:'uppercase',letterSpacing:'2px',fontSize:'12px',margin:0}}>Gestión de Personal</h3>
+            <button onClick={closeModal} style={{background:'none',border:'none',cursor:'pointer'}}><X size={18} /></button>
+          </div>
+          <div style={{padding:'16px'}}>
+            <div style={{display:'flex',justifyContent:'flex-end',marginBottom:'16px'}}><button onClick={() => openUserForm(modalMode === 'techList' ? 'tech' : 'admin')} className="btn-header" style={{background:'#2563eb',color:'white',border:'none'}}><Plus size={14} /> AÑADIR</button></div>
+            <div style={{maxHeight:'400px',overflowY:'auto',border:'1px solid #e2e8f0',borderRadius:'12px'}}>
+              <table style={{width:'100%',textAlign:'left',fontSize:'12px',borderCollapse:'collapse'}}><tbody>
+                {(modalMode === 'techList' ? techs : admins).map(u => (
+                  <tr key={u.id} style={{borderBottom:'1px solid #f1f5f9'}}>
+                    <td style={{padding:'10px',fontWeight:700,textTransform:'uppercase'}}>{u.name} {u.surname} <span style={{fontSize:'9px',color:'#94a3b8',marginLeft:'8px'}}>(@{u.username})</span></td>
+                    <td style={{padding:'10px',textAlign:'right',display:'flex',gap:'4px',justifyContent:'flex-end'}}>
+                        <button onClick={() => openUserForm(u.role, u)} style={{padding:'4px',color:'#94a3b8',background:'none',border:'none',cursor:'pointer',display:'inline-flex'}}><UserCog size={16} /></button>
+                        <button onClick={() => handleDeleteUser(u)} style={{padding:'4px',color:'#94a3b8',background:'none',border:'none',cursor:'pointer',display:'inline-flex'}}><Trash2 size={16} /></button>
+                      </td>
+                  </tr>
+                ))}
+              </tbody></table>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {modalMode === 'userForm' && (
+        <Modal onClose={closeModal} zIndex={60}>
+          <div style={{padding:'24px'}}>
+            <h3 style={{fontWeight:900,color:'#1e293b',textTransform:'uppercase',letterSpacing:'2px',fontSize:'12px',marginBottom:'16px'}}>Datos de Acceso</h3>
+            <form onSubmit={handleCreateOrUpdateUser} style={{display:'flex',flexDirection:'column',gap:'12px'}}>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px'}}>
+                <div><label className="label-form">Nombre</label><input required name="userName" defaultValue={editingUser?.name} className="input-form" style={{textTransform:'uppercase'}} /></div>
+                <div><label className="label-form">Apellido</label><input required name="userSurname" defaultValue={editingUser?.surname} className="input-form" style={{textTransform:'uppercase'}} /></div>
+              </div>
+              <div><label className="label-form">Usuario</label><input required name="userUsername" defaultValue={editingUser?.username} className="input-form" /></div>
+              <div><label className="label-form">Contraseña</label><input required name="userPassword" type="password" defaultValue={editingUser?.password} className="input-form" /></div>
+              {userFormRole === 'tech' && (<div><label className="label-form">Jornada</label><select name="shiftType" defaultValue={editingUser?.shiftType || 'NORMAL'} className="input-form" style={{fontWeight:700}}><option value="NORMAL">NORMAL (Azul)</option><option value="INTENSIVA">INTENSIVA (Verde)</option></select></div>)}
+              <div style={{display:'flex',gap:'8px',paddingTop:'8px'}}>
+                <button type="button" onClick={closeModal} style={{flex:1,padding:'10px',fontSize:'11px',fontWeight:900,border:'1px solid #e2e8f0',borderRadius:'10px',cursor:'pointer',textTransform:'uppercase',background:'white'}}>CANCELAR</button>
+                <button type="submit" disabled={saving} style={{flex:1,padding:'10px',fontSize:'11px',fontWeight:900,color:'white',background:'#2563eb',borderRadius:'10px',border:'none',cursor:'pointer',textTransform:'uppercase',opacity:saving?0.7:1}}>{saving ? '...' : 'GUARDAR'}</button>
+              </div>
+            </form>
+          </div>
+        </Modal>
+      )}
+
+      {modalMode === 'others' && (
+        <Modal onClose={closeModal}>
+          <div style={{padding:'16px',borderBottom:'1px solid #f1f5f9',display:'flex',alignItems:'center',justifyContent:'space-between',background:'#f8fafc'}}>
+            <h3 style={{fontWeight:900,color:'#1e293b',textTransform:'uppercase',letterSpacing:'2px',fontSize:'12px',margin:0}}>Registrar Ausencia</h3>
+            <button onClick={closeModal} style={{padding:'4px',background:'none',border:'none',cursor:'pointer'}}><X size={20} /></button>
+          </div>
+          <form onSubmit={handleSaveAbsence} style={{padding:'20px',display:'flex',flexDirection:'column',gap:'16px'}}>
+            <div><label className="label-form">Técnico</label><select required name="techId" className="input-form">{techs.map(t => <option key={t.id} value={t.id}>{t.name} {t.surname}</option>)}</select></div>
+            <div><label className="label-form">Concepto</label><select required name="absenceType" className="input-form"><option value="BAJA">BAJA</option><option value="VACACIONES">VACACIONES</option><option value="PERMISO">PERMISO</option></select></div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px'}}>
+              <div><label className="label-form">Inicio</label><input type="date" required name="startDate" className="input-form" /></div>
+              <div><label className="label-form">Fin</label><input type="date" required name="endDate" className="input-form" /></div>
+            </div>
+            <div style={{display:'flex',gap:'16px',paddingTop:'8px'}}>
+              <button type="button" onClick={closeModal} style={{flex:1,padding:'12px',borderRadius:'12px',border:'1px solid #e2e8f0',fontSize:'11px',fontWeight:900,textTransform:'uppercase',cursor:'pointer',background:'white'}}>CANCELAR</button>
+              <button type="submit" disabled={saving} style={{flex:1,padding:'12px',borderRadius:'12px',background:'#f59e0b',color:'white',fontSize:'11px',fontWeight:900,textTransform:'uppercase',border:'none',cursor:'pointer',opacity:saving?0.7:1}}>CONFIRMAR</button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {modalMode === 'reorder' && (
+        <Modal onClose={closeModal} maxWidth="400px">
+          <div style={{padding:'16px',borderBottom:'1px solid #e2e8f0',display:'flex',alignItems:'center',justifyContent:'space-between',background:'#f8fafc'}}>
+            <h3 style={{fontWeight:900,color:'#1e293b',textTransform:'uppercase',letterSpacing:'2px',fontSize:'12px',margin:0}}>Ordenar Técnicos</h3>
+            <button onClick={closeModal} style={{background:'none',border:'none',cursor:'pointer'}}><X size={18} /></button>
+          </div>
+          <div style={{padding:'16px',display:'flex',flexDirection:'column',gap:'8px'}}>
+            <p style={{fontSize:'11px',color:'#64748b',fontWeight:700}}>Arrastra para reordenar. El orden se guardará para todos.</p>
+            <div style={{display:'flex',flexDirection:'column',gap:'6px',maxHeight:'400px',overflowY:'auto'}}>
+              {reorderList.map((t, idx) => (
+                <div key={t.id} draggable
+                  onDragStart={() => handleDragStart(idx)}
+                  onDragOver={(e) => handleDragOver(e, idx)}
+                  onDragEnd={handleDragEnd}
+                  style={{display:'flex',alignItems:'center',gap:'12px',padding:'10px 14px',background:dragIdx===idx?'#eff6ff':'#f8fafc',border:'1px solid',borderColor:dragIdx===idx?'#93c5fd':'#e2e8f0',borderRadius:'10px',cursor:'grab',userSelect:'none'}}>
+                  <div style={{display:'flex',flexDirection:'column',gap:'2px',color:'#94a3b8'}}>
+                    <div style={{width:'16px',height:'2px',background:'currentColor',borderRadius:'1px'}}/>
+                    <div style={{width:'16px',height:'2px',background:'currentColor',borderRadius:'1px'}}/>
+                    <div style={{width:'16px',height:'2px',background:'currentColor',borderRadius:'1px'}}/>
+                  </div>
+                  <div style={{width:'8px',height:'8px',borderRadius:'50%',background:t.shiftType==='INTENSIVA'?'#22c55e':'#3b82f6',flexShrink:0}} />
+                  <div>
+                    <div style={{fontWeight:900,fontSize:'13px',color:'#1e293b',textTransform:'uppercase'}}>{t.name} {t.surname}</div>
+                    <div style={{fontSize:'10px',color:'#94a3b8',textTransform:'uppercase'}}>{t.shiftType}</div>
+                  </div>
+                  <div style={{marginLeft:'auto',fontSize:'11px',fontWeight:900,color:'#cbd5e1'}}>#{idx+1}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{display:'flex',gap:'8px',paddingTop:'8px'}}>
+              <button onClick={closeModal} style={{flex:1,padding:'10px',fontSize:'11px',fontWeight:900,border:'1px solid #e2e8f0',borderRadius:'10px',cursor:'pointer',textTransform:'uppercase',background:'white'}}>CANCELAR</button>
+              <button onClick={saveReorder} disabled={saving} style={{flex:1,padding:'10px',fontSize:'11px',fontWeight:900,color:'white',background:'#2563eb',borderRadius:'10px',border:'none',cursor:'pointer',textTransform:'uppercase',opacity:saving?0.7:1}}>GUARDAR ORDEN</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {modalMode === 'holiday' && (
+        <Modal onClose={closeModal} maxWidth="380px">
+          <div style={{padding:'20px',borderBottom:'1px solid #e2e8f0',background:'#f8fafc'}}>
+            <h3 style={{fontWeight:900,color:'#1e293b',textTransform:'uppercase',letterSpacing:'2px',fontSize:'12px',textAlign:'center'}}>FESTIVOS</h3>
+          </div>
+          <div style={{padding:'16px',display:'flex',flexDirection:'column',gap:'12px'}}>
+            {holidays.length > 0 && (
+              <div style={{maxHeight:'200px',overflowY:'auto',border:'1px solid #e2e8f0',borderRadius:'12px'}}>
+                {[...holidays].sort().map(h => (
+                  <div key={h} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 12px',borderBottom:'1px solid #f1f5f9'}}>
+                    <span style={{fontWeight:700,fontSize:'12px',color:'#1e293b'}}>{h}</span>
+                    <button onClick={() => handleDeleteHoliday(h)} style={{padding:'4px',background:'none',border:'none',cursor:'pointer',color:'#ef4444',display:'flex'}}><Trash2 size={14} /></button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <form onSubmit={handleAddHoliday} style={{display:'flex',flexDirection:'column',gap:'8px'}}>
+              <label className="label-form">Añadir nuevo festivo</label>
+              <input type="date" name="holidayDate" required className="input-form" />
+              <div style={{display:'flex',gap:'8px'}}>
+                <button type="button" onClick={closeModal} style={{flex:1,padding:'8px',fontSize:'10px',fontWeight:900,border:'1px solid #e2e8f0',borderRadius:'10px',cursor:'pointer',textTransform:'uppercase',background:'white'}}>CERRAR</button>
+                <button type="submit" style={{flex:1,padding:'8px',fontSize:'10px',fontWeight:900,background:'#dc2626',color:'white',borderRadius:'10px',border:'none',cursor:'pointer',textTransform:'uppercase'}}>AÑADIR</button>
+              </div>
+            </form>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.render(<App />, document.getElementById('root'));
+</script>
+</body>
+</html>
