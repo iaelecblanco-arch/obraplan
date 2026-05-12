@@ -686,8 +686,14 @@ function App() {
                       for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
                       const blob = new Blob([bytes], { type: 'application/pdf' });
                       const url = URL.createObjectURL(blob);
-                      window.open(url, '_blank');
-                    } catch(e) { alert('No se pudo abrir el PDF: ' + e.message); }
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = selectedTask.fileName || 'documento.pdf';
+                      a.target = '_blank';
+                      document.body.appendChild(a);
+                      a.click();
+                      setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
+                    } catch(e) { alert('Error: ' + e.message); }
                   }} style={{padding:'6px 12px',background:'#2563eb',color:'white',border:'none',borderRadius:'8px',fontSize:'10px',fontWeight:900,cursor:'pointer',textTransform:'uppercase',whiteSpace:'nowrap'}}>ABRIR PDF</button>
                 ) : (
                   <span style={{fontSize:'10px',color:'#64748b',fontWeight:700,textTransform:'uppercase'}}>PDF adjunto</span>
