@@ -196,12 +196,12 @@ function TechRow({ t, weekDates, holidays, tasks, isAdmin, techWeekClipboard, cl
       <td style={{padding:'12px',background:'white',position:'sticky',left:0,zIndex:10,borderRight:'1px solid #94a3b8',boxShadow:'2px 0 4px rgba(0,0,0,0.05)',minWidth:'144px'}}>
         <div onMouseEnter={() => setHovering(true)} onMouseLeave={() => setHovering(false)} style={{display:'flex',alignItems:'center',gap:'8px',position:'relative'}}>
           <div style={{width:'10px',height:'10px',borderRadius:'50%',background:t.shiftType==='INTENSIVA'?'#22c55e':'#3b82f6',flexShrink:0}} />
-          <div style={{overflow:'hidden',paddingRight:'32px'}}>
-            <div style={{fontWeight:900,textTransform:'uppercase',fontSize:'13px',color:'#1e293b'}}>{t.name}</div>
-            <div style={{fontWeight:700,color:'#475569',fontSize:'12px',textTransform:'uppercase'}}>{t.surname}</div>
+          <div style={{overflow:'hidden',flex:1,minWidth:0}}>
+            <div style={{fontWeight:900,textTransform:'uppercase',fontSize:'12px',color:'#1e293b',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.name}</div>
+            <div style={{fontWeight:700,color:'#475569',fontSize:'11px',textTransform:'uppercase',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.surname}</div>
           </div>
           {isAdmin && hovering && (
-            <div style={{position:'absolute',right:0,top:0,display:'flex',gap:'2px',background:'rgba(255,255,255,0.9)',padding:'2px',borderRadius:'6px',boxShadow:'0 1px 3px rgba(0,0,0,0.1)',border:'1px solid #f1f5f9'}}>
+            <div style={{position:'absolute',top:'50%',right:0,transform:'translateY(-50%)',display:'flex',gap:'2px',background:'rgba(255,255,255,0.92)',padding:'2px',borderRadius:'6px',boxShadow:'0 1px 4px rgba(0,0,0,0.15)',border:'1px solid #e2e8f0',zIndex:1}}>
               <button onClick={() => onCopyTechWeek(t.id)} style={{padding:'4px',color:'#94a3b8',background:'none',border:'none',cursor:'pointer',display:'flex'}}><CopyPlus size={11} /></button>
               {techWeekClipboard && <button onClick={() => onPasteTechWeek(t.id)} style={{padding:'4px',color:'white',background:'#2563eb',border:'none',cursor:'pointer',borderRadius:'4px',display:'flex'}}><ClipboardPaste size={11} /></button>}
             </div>
