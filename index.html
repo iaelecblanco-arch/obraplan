@@ -70,8 +70,21 @@ const newId = () => {
   return arr[0] * 1000000 + arr[1] % 1000000;
 };
 const newSmallId = () => Math.floor(Math.random() * 900000) + 100000; // safe int for techs/admins
-const dbTaskToLocal = (t) => ({ internalId: t.internal_id, id: t.id, customer: t.customer, reference: t.reference, instructions: t.instructions || '', date: t.date, techIds: t.tech_ids || [], completed: t.completed, isAbsence: t.is_absence, fileName: t.file_name || null, fileData: t.file_data || null });
-const localTaskToDB = (t) => ({ internal_id: t.internalId, id: t.id, customer: t.customer, reference: t.reference, instructions: t.instructions || '', date: t.date, tech_ids: t.techIds, completed: t.completed || false, is_absence: t.isAbsence || false, file_name: t.fileName || null, file_data: t.fileData || null });
+const dbTaskToLocal = (t) => {
+  let files = [];
+  if (t.file_data) {
+    if (t.file_name === '__multi__') {
+      try { files = JSON.parse(t.file_data); } catch(e) { files = []; }
+    } else {
+      files = [{ name: t.file_name, data: t.file_data }];
+    }
+  }
+  return { internalId: t.internal_id, id: t.id, customer: t.customer, reference: t.reference, instructions: t.instructions || '', date: t.date, techIds: t.tech_ids || [], completed: t.completed, isAbsence: t.is_absence, files };
+};
+const localTaskToDB = (t) => {
+  const filesJson = t.files?.length ? JSON.stringify(t.files) : null;
+  return { internal_id: t.internalId, id: t.id, customer: t.customer, reference: t.reference, instructions: t.instructions || '', date: t.date, tech_ids: t.techIds, completed: t.completed || false, is_absence: t.isAbsence || false, file_name: filesJson ? '__multi__' : null, file_data: filesJson };
+};
 const dbTechToLocal = (t) => ({ id: t.id, name: t.name, surname: t.surname, username: t.username, password: t.password, role: t.role, shiftType: t.shift_type, sortOrder: t.sort_order ?? 999 });
 
 // --- SVG Icons ---
@@ -153,6 +166,12 @@ function TaskCard({ task, highlight, isAdmin, onView, onToggle, onEdit, onCopy, 
       <div style={{width:'100%'}}>
         <div style={{fontWeight:900,color:'#1e293b',textTransform:'uppercase',fontSize:'12px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',paddingRight: hover ? '52px' : '0'}}>{task.id} - {task.customer}</div>
         <div style={{fontSize:'11px',fontWeight:700,color:'#475569',textTransform:'uppercase',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',lineHeight:1,paddingRight: hover ? '52px' : '0'}}>{task.reference}</div>
+        {!isAdmin && !task.isAbsence && (task.instructions || task.files?.length) && (
+          <div className="animate-pulse" style={{display:'flex',gap:'4px',marginTop:'3px',flexWrap:'wrap'}}>
+            {task.instructions && <span style={{fontSize:'9px',fontWeight:900,color:'#d97706',background:'#fef3c7',border:'1px solid #fcd34d',borderRadius:'4px',padding:'1px 5px',textTransform:'uppercase',letterSpacing:'0.03em'}}>📋 Instrucciones</span>}
+            {task.files?.length > 0 && <span style={{fontSize:'9px',fontWeight:900,color:'#7c3aed',background:'#f5f3ff',border:'1px solid #c4b5fd',borderRadius:'4px',padding:'1px 5px',textTransform:'uppercase',letterSpacing:'0.03em'}}>📎 {task.files.length > 1 ? `${task.files.length} docs` : 'Documento'}</span>}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -176,14 +195,16 @@ function CellHover({ children, isH, isAdmin, clipboard, onNew, onPaste }) {
   );
 }
 
-function ThDay({ date, idx, isH, todayISO }) {
+function ThDay({ date, idx, isH, todayISO, tasks, techs }) {
   const dISO = formatDateISO(date);
   const isToday = dISO === todayISO;
+  const techsWithoutTask = techs ? techs.filter(t => !tasks.some(tk => tk.techIds.includes(t.id) && tk.date === dISO)).length : 0;
   return (
     <th style={{padding:'8px',textAlign:'center',borderRight:idx<4?'1px solid #94a3b8':'none',background:isH?'#fecaca':isToday?'#eff6ff':'transparent',overflow:'hidden'}}>
       <div style={{fontWeight:900,textTransform:'uppercase',color:isH?'#991b1b':isToday?'#2563eb':'#64748b',whiteSpace:'nowrap',fontSize:'11px',display:'flex',alignItems:'baseline',justifyContent:'center',gap:'4px'}}>
         <span>{DAYS_NAMES[idx]}{isToday ? ' - HOY' : ''}</span>
         <span style={{fontSize:'15px'}}>{date.getDate()}</span>
+        {techsWithoutTask > 0 && <span style={{fontSize:'10px',fontWeight:900,color:'#dc2626'}}>({techsWithoutTask})</span>}
       </div>
     </th>
   );
@@ -192,7 +213,7 @@ function ThDay({ date, idx, isH, todayISO }) {
 function TechRow({ t, weekDates, holidays, tasks, isAdmin, techWeekClipboard, clipboard, searchTerm, onNewTask, onPasteTask, onEditTask, onCopyTask, onDeleteTask, onToggleCompleted, onViewTask, onCopyTechWeek, onPasteTechWeek }) {
   const [hovering, setHovering] = useState(false);
   return (
-    <tr style={{borderBottom:'1px solid #94a3b8'}}>
+    <tr style={{borderBottom:'2px solid #94a3b8'}}>
       <td style={{padding:'12px',background:'white',position:'sticky',left:0,zIndex:10,borderRight:'1px solid #94a3b8',boxShadow:'2px 0 4px rgba(0,0,0,0.05)',minWidth:'144px'}}>
         <div onMouseEnter={() => setHovering(true)} onMouseLeave={() => setHovering(false)} style={{display:'flex',alignItems:'center',gap:'8px',position:'relative'}}>
           <div style={{width:'10px',height:'10px',borderRadius:'50%',background:t.shiftType==='INTENSIVA'?'#22c55e':'#3b82f6',flexShrink:0}} />
@@ -265,6 +286,7 @@ function App() {
   const [dragIdx, setDragIdx] = useState(null);
   const [formCustomer, setFormCustomer] = useState("");
   const [formReference, setFormReference] = useState("");
+  const [pendingFiles, setPendingFiles] = useState([]);
 
   const isAdmin = useMemo(() => user?.role === 'admin', [user]);
 
@@ -327,24 +349,23 @@ function App() {
 
   const handleOpenNewTask = (techId, date) => {
     setSelectedSlot({ techId, dateISO: formatDateISO(date) }); setTempAssignedTechs([techId]);
-    setEditingTask(null); setFormTaskId(""); setFormCustomer(""); setFormReference(""); setModalMode('task');
+    setEditingTask(null); setFormTaskId(""); setFormCustomer(""); setFormReference(""); setPendingFiles([]); setModalMode('task');
   };
 
   const handleSaveTask = async (e) => {
     e.preventDefault(); setSaving(true);
     const instructions = e.target.instructions ? e.target.instructions.value : '';
-    const fi = e.target.file;
-    let fileName = editingTask?.fileName || null;
-    let fileData = editingTask?.fileData || null;
-    if (fi && fi.files && fi.files[0]) {
-      fileName = fi.files[0].name;
-      fileData = await new Promise(resolve => {
+    // Start with existing files, then add newly picked ones
+    let files = editingTask?.files ? [...editingTask.files] : [];
+    if (pendingFiles.length > 0) {
+      const newFileObjs = await Promise.all(pendingFiles.map(f => new Promise(resolve => {
         const reader = new FileReader();
-        reader.onload = ev => resolve(ev.target.result);
-        reader.readAsDataURL(fi.files[0]);
-      });
+        reader.onload = ev => resolve({ name: f.name, data: ev.target.result });
+        reader.readAsDataURL(f);
+      })));
+      files = [...files, ...newFileObjs];
     }
-    const taskData = { internalId: editingTask?.internalId || newId(), id: formTaskId, customer: formCustomer, reference: formReference, instructions, date: selectedSlot.dateISO, techIds: tempAssignedTechs, completed: editingTask?.completed || false, isAbsence: false, fileName, fileData };
+    const taskData = { internalId: editingTask?.internalId || newId(), id: formTaskId, customer: formCustomer, reference: formReference, instructions, date: selectedSlot.dateISO, techIds: tempAssignedTechs, completed: editingTask?.completed || false, isAbsence: false, files };
     let err = null;
     if (editingTask) { const r = await sb.from('tasks').update(localTaskToDB(taskData)).eq('internal_id', editingTask.internalId); err = r.error; }
     else { const r = await sb.from('tasks').insert(localTaskToDB(taskData)); err = r.error; }
@@ -473,7 +494,7 @@ function App() {
   const handleEditTask = (task) => {
     if (!isAdmin) return;
     setEditingTask(task); setFormTaskId(task.id); setFormCustomer(task.customer); setFormReference(task.reference);
-    setSelectedSlot({ techId: task.techIds[0], dateISO: task.date }); setTempAssignedTechs(task.techIds); setModalMode('task');
+    setSelectedSlot({ techId: task.techIds[0], dateISO: task.date }); setTempAssignedTechs(task.techIds); setPendingFiles([]); setModalMode('task');
   };
 
   const handleCopyTask = (task) => { if (!task.isAbsence) setClipboard(task); };
@@ -627,6 +648,28 @@ function App() {
                         style={{padding:'12px',borderRadius:'12px',border:`1.5px solid ${task.isAbsence?'#fcd34d':task.completed?'#86efac':'#bfdbfe'}`,background:task.isAbsence?'#fef3c7':task.completed?'#dcfce7':'#eff6ff',cursor:'pointer'}}>
                         <div style={{fontWeight:900,fontSize:'13px',color:'#1e293b',textTransform:'uppercase'}}>{task.id} - {task.customer}</div>
                         <div style={{fontSize:'12px',color:'#475569',fontWeight:700,textTransform:'uppercase',marginTop:'2px'}}>{task.reference}</div>
+                        {!task.isAbsence && (task.instructions || task.files?.length > 0) && (
+                          <div className="animate-pulse" style={{display:'flex',gap:'6px',marginTop:'6px',flexWrap:'wrap'}}>
+                            {task.instructions && <span style={{fontSize:'10px',fontWeight:900,color:'#d97706',background:'#fef3c7',border:'1px solid #fcd34d',borderRadius:'6px',padding:'2px 8px',textTransform:'uppercase'}}>📋 Instrucciones</span>}
+                            {task.files?.length > 0 && <span style={{fontSize:'10px',fontWeight:900,color:'#7c3aed',background:'#f5f3ff',border:'1px solid #c4b5fd',borderRadius:'6px',padding:'2px 8px',textTransform:'uppercase'}}>📎 {task.files.length > 1 ? `${task.files.length} documentos` : 'Documento adjunto'}</span>}
+                          </div>
+                        )}
+                        {(() => {
+                          const companions = techs.filter(tc => tc.id !== user.id &&
+                            tasks.some(tk => tk.id === task.id && tk.date === task.date && tk.techIds.includes(tc.id))
+                          );
+                          if (companions.length === 0) return null;
+                          return (
+                            <div style={{marginTop:'8px',paddingTop:'8px',borderTop:'1px dashed #bfdbfe'}}>
+                              <div style={{fontSize:'9px',fontWeight:900,color:'#64748b',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:'4px'}}>👥 Acompañado de:</div>
+                              <div style={{display:'flex',flexWrap:'wrap',gap:'4px'}}>
+                                {companions.map(c => (
+                                  <span key={c.id} style={{fontSize:'10px',fontWeight:700,color:'#1d4ed8',background:'#dbeafe',border:'1px solid #93c5fd',borderRadius:'6px',padding:'2px 8px',textTransform:'uppercase'}}>{c.name} {c.surname}</span>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })()}
                         {task.completed && <div style={{marginTop:'6px',display:'inline-flex',alignItems:'center',gap:'4px',background:'#16a34a',color:'white',borderRadius:'6px',padding:'2px 8px',fontSize:'10px',fontWeight:900}}><CheckCircle2 size={10} color="white" /> COMPLETADO</div>}
                       </div>
                     ))}
@@ -644,7 +687,7 @@ function App() {
               <tr style={{background:'#f1f5f9',borderBottom:'1px solid #94a3b8'}}>
                 <th style={{width:'144px',padding:'12px',textAlign:'left',fontSize:'11px',fontWeight:900,textTransform:'uppercase',color:'#475569',position:'sticky',left:0,background:'#f1f5f9',zIndex:20,borderRight:'1px solid #94a3b8'}}>Equipo</th>
                 { (() => { const todayISO = formatDateISO(new Date()); return weekDates.map((date, idx) => { const isH = holidays.includes(formatDateISO(date)); return (
-                  <ThDay key={idx} date={date} idx={idx} isH={isH} todayISO={todayISO} />
+                  <ThDay key={idx} date={date} idx={idx} isH={isH} todayISO={todayISO} tasks={tasks} techs={visibleTechs} />
                 ); }); })() }
               </tr>
             </thead>
@@ -673,33 +716,56 @@ function App() {
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px'}}><InfoBox label="ID Tarea" value={selectedTask.id} /><InfoBox label="Cliente" value={selectedTask.customer} /></div>
             <InfoBox label="Referencia" value={selectedTask.reference} />
             <InfoBox label="Instrucciones" value={selectedTask.instructions || 'Sin instrucciones adicionales.'} />
-            {selectedTask.fileName && (
-              <div style={{display:'flex',alignItems:'center',gap:'12px',padding:'12px',background:'#eff6ff',borderRadius:'12px',border:'1px solid #bfdbfe'}}>
-                <FileText size={20} color="#2563eb" />
-                <span style={{fontWeight:700,fontSize:'12px',color:'#1d4ed8',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{selectedTask.fileName}</span>
-                {selectedTask.fileData ? (
-                  <button onClick={() => {
-                    try {
-                      const base64 = selectedTask.fileData.split(',')[1];
-                      const binary = atob(base64);
-                      const bytes = new Uint8Array(binary.length);
-                      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-                      const blob = new Blob([bytes], { type: 'application/pdf' });
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement('a');
-                      a.href = url;
-                      a.download = selectedTask.fileName || 'documento.pdf';
-                      a.target = '_blank';
-                      document.body.appendChild(a);
-                      a.click();
-                      setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
-                    } catch(e) { alert('Error: ' + e.message); }
-                  }} style={{padding:'6px 12px',background:'#2563eb',color:'white',border:'none',borderRadius:'8px',fontSize:'10px',fontWeight:900,cursor:'pointer',textTransform:'uppercase',whiteSpace:'nowrap'}}>ABRIR PDF</button>
-                ) : (
-                  <span style={{fontSize:'10px',color:'#64748b',fontWeight:700,textTransform:'uppercase'}}>PDF adjunto</span>
-                )}
+            {selectedTask.files?.length > 0 && (
+              <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
+                <div style={{fontSize:'10px',fontWeight:900,color:'#475569',textTransform:'uppercase',letterSpacing:'0.05em'}}>Documentos adjuntos ({selectedTask.files.length})</div>
+                {selectedTask.files.map((f, i) => {
+                  const ext = f.name?.split('.').pop()?.toLowerCase() || '';
+                  const isImg = ['jpg','jpeg','png','gif','webp'].includes(ext);
+                  const isPdf = ext === 'pdf';
+                  const icon = isPdf ? '📄' : isImg ? '🖼️' : ext === 'xlsx' || ext === 'xls' ? '📊' : ext === 'docx' || ext === 'doc' ? '📝' : '📎';
+                  const mimeType = isPdf ? 'application/pdf' : isImg ? `image/${ext === 'jpg' ? 'jpeg' : ext}` : 'application/octet-stream';
+                  return (
+                    <div key={i} style={{display:'flex',alignItems:'center',gap:'10px',padding:'10px 12px',background:'#eff6ff',borderRadius:'10px',border:'1px solid #bfdbfe'}}>
+                      <span style={{fontSize:'16px',lineHeight:1}}>{icon}</span>
+                      <span style={{fontWeight:700,fontSize:'11px',color:'#1d4ed8',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{f.name}</span>
+                      {f.data && (
+                        <button onClick={() => {
+                          try {
+                            const base64 = f.data.split(',')[1];
+                            const binary = atob(base64);
+                            const bytes = new Uint8Array(binary.length);
+                            for (let j = 0; j < binary.length; j++) bytes[j] = binary.charCodeAt(j);
+                            const blob = new Blob([bytes], { type: mimeType });
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url; a.download = f.name; a.target = '_blank';
+                            document.body.appendChild(a); a.click();
+                            setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
+                          } catch(e) { alert('Error: ' + e.message); }
+                        }} style={{padding:'5px 10px',background:'#2563eb',color:'white',border:'none',borderRadius:'8px',fontSize:'10px',fontWeight:900,cursor:'pointer',textTransform:'uppercase',whiteSpace:'nowrap'}}>ABRIR</button>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
+            {(() => {
+              const companions = techs.filter(tc => tc.id !== user?.id &&
+                tasks.some(tk => tk.id === selectedTask.id && tk.date === selectedTask.date && tk.techIds.includes(tc.id))
+              );
+              if (companions.length === 0) return null;
+              return (
+                <div style={{padding:'12px 14px',background:'#dbeafe',borderRadius:'12px',border:'1px solid #93c5fd'}}>
+                  <div style={{fontSize:'10px',fontWeight:900,color:'#1e40af',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:'8px'}}>👥 Acompañado de:</div>
+                  <div style={{display:'flex',flexWrap:'wrap',gap:'6px'}}>
+                    {companions.map(c => (
+                      <span key={c.id} style={{fontSize:'11px',fontWeight:900,color:'#1d4ed8',background:'white',border:'1px solid #93c5fd',borderRadius:'8px',padding:'4px 10px',textTransform:'uppercase'}}>{c.name} {c.surname}</span>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
             <button onClick={() => { toggleTaskCompleted(selectedTask.internalId); closeModal(); }} style={{width:'100%',padding:'14px',borderRadius:'16px',fontWeight:900,textTransform:'uppercase',color:'white',border:'none',cursor:'pointer',fontSize:'13px',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px',background:selectedTask.completed?'#f59e0b':'#16a34a'}}>
               {selectedTask.completed ? <><X size={18} color="white" /> Pendiente</> : <><CheckCircle2 size={18} color="white" /> Completado</>}
             </button>
@@ -731,9 +797,35 @@ function App() {
             </div>
             <div><label className="label-form">Instrucciones</label><textarea className="input-form" name="instructions" defaultValue={editingTask?.instructions} placeholder="Detalles..." style={{height:'80px',resize:'none'}} /></div>
             <div>
-              <label className="label-form">Adjuntar PDF</label>
-              <input type="file" name="file" accept=".pdf" style={{display:'block',width:'100%',fontSize:'11px',color:'#64748b',marginTop:'4px'}} />
-              {editingTask?.fileName && <p style={{fontSize:'10px',color:'#2563eb',marginTop:'4px',fontWeight:700}}>Archivo actual: {editingTask.fileName}</p>}
+              <label className="label-form">Documentos adjuntos</label>
+              <input type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.webp,.gif,.txt,.zip" onChange={e => setPendingFiles(prev => [...prev, ...Array.from(e.target.files)])} style={{display:'block',width:'100%',fontSize:'11px',color:'#64748b',marginTop:'4px'}} />
+              <p style={{fontSize:'9px',color:'#94a3b8',marginTop:'3px'}}>PDF, Word, Excel, imágenes, etc. Puedes añadir varios a la vez.</p>
+              {/* Existing saved files */}
+              {editingTask?.files?.length > 0 && (
+                <div style={{marginTop:'8px',display:'flex',flexDirection:'column',gap:'4px'}}>
+                  <p style={{fontSize:'9px',fontWeight:900,color:'#475569',textTransform:'uppercase',marginBottom:'2px'}}>Archivos guardados:</p>
+                  {editingTask.files.map((f, i) => (
+                    <div key={i} style={{display:'flex',alignItems:'center',gap:'8px',padding:'5px 8px',background:'#f1f5f9',borderRadius:'8px',border:'1px solid #e2e8f0'}}>
+                      <span style={{fontSize:'12px'}}>📎</span>
+                      <span style={{flex:1,fontSize:'10px',fontWeight:700,color:'#334155',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{f.name}</span>
+                      <button type="button" onClick={() => setEditingTask(prev => ({...prev, files: prev.files.filter((_,j) => j !== i)}))} style={{padding:'2px 6px',background:'#fee2e2',color:'#dc2626',border:'none',borderRadius:'6px',fontSize:'10px',fontWeight:900,cursor:'pointer'}}>✕</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {/* Pending new files */}
+              {pendingFiles.length > 0 && (
+                <div style={{marginTop:'8px',display:'flex',flexDirection:'column',gap:'4px'}}>
+                  <p style={{fontSize:'9px',fontWeight:900,color:'#2563eb',textTransform:'uppercase',marginBottom:'2px'}}>Por añadir:</p>
+                  {pendingFiles.map((f, i) => (
+                    <div key={i} style={{display:'flex',alignItems:'center',gap:'8px',padding:'5px 8px',background:'#eff6ff',borderRadius:'8px',border:'1px solid #bfdbfe'}}>
+                      <span style={{fontSize:'12px'}}>📄</span>
+                      <span style={{flex:1,fontSize:'10px',fontWeight:700,color:'#1d4ed8',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{f.name}</span>
+                      <button type="button" onClick={() => setPendingFiles(prev => prev.filter((_,j) => j !== i))} style={{padding:'2px 6px',background:'#fee2e2',color:'#dc2626',border:'none',borderRadius:'6px',fontSize:'10px',fontWeight:900,cursor:'pointer'}}>✕</button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             <button type="submit" disabled={saving} style={{width:'100%',background:'#2563eb',color:'white',fontWeight:900,padding:'14px',borderRadius:'16px',border:'none',cursor:'pointer',textTransform:'uppercase',fontSize:'12px',letterSpacing:'2px',opacity:saving?0.7:1}}>{saving ? 'Guardando...' : 'Guardar Tarea'}</button>
           </form>
