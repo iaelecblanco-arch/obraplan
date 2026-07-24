@@ -577,14 +577,6 @@ function App() {
     setAuditLoading(false);
   };
 
-  const hoursReport = useMemo(() => {
-    const dates = weekDates.map(d => formatDateISO(d));
-    return visibleTechs.map(t => {
-      const techTasks = tasks.filter(tk => tk.techIds.includes(t.id) && dates.includes(tk.date) && !tk.isAbsence);
-      const total = techTasks.reduce((sum, tk) => sum + (Number(tk.hours) || 0), 0);
-      return { name: `${t.name} ${t.surname}`, total, count: techTasks.length, withoutHours: techTasks.filter(tk => !tk.hours).length };
-    }).sort((a,b) => b.total - a.total);
-  }, [visibleTechs, tasks, weekDates]);
 
   const exportToExcel = () => {
     const dates = weekDates.map(d => formatDateISO(d));
@@ -709,6 +701,15 @@ function App() {
   const changeWeek = (w) => { const n = new Date(currentMonday); n.setDate(currentMonday.getDate() + w*7); setCurrentMonday(n); };
   const toggleTechInTask = (id) => { if (tempAssignedTechs.includes(id)) { if (tempAssignedTechs.length > 1) setTempAssignedTechs(tempAssignedTechs.filter(x => x !== id)); } else setTempAssignedTechs([...tempAssignedTechs, id]); };
   const visibleTechs = useMemo(() => { if (!user) return []; return isAdmin ? techs : techs.filter(t => t.id === user.id); }, [user, techs, isAdmin]);
+
+  const hoursReport = useMemo(() => {
+    const dates = weekDates.map(d => formatDateISO(d));
+    return visibleTechs.map(t => {
+      const techTasks = tasks.filter(tk => tk.techIds.includes(t.id) && dates.includes(tk.date) && !tk.isAbsence);
+      const total = techTasks.reduce((sum, tk) => sum + (Number(tk.hours) || 0), 0);
+      return { name: `${t.name} ${t.surname}`, total, count: techTasks.length, withoutHours: techTasks.filter(tk => !tk.hours).length };
+    }).sort((a,b) => b.total - a.total);
+  }, [visibleTechs, tasks, weekDates]);
 
   // CARGA
   if (loading) return (
