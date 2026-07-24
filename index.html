@@ -8,6 +8,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: Arial, sans-serif; background: #f8fafc; }
@@ -32,6 +33,22 @@
   @media (min-width: 769px) {
     .mobile-cards { display: none !important; }
   }
+  @keyframes slideIn { from{opacity:0;transform:translateY(-10px)} to{opacity:1;transform:translateY(0)} }
+  .toast-anim { animation: slideIn 0.25s ease; }
+  body.dark-mode { background:#0f172a; }
+  body.dark-mode header,
+  body.dark-mode .main-card,
+  body.dark-mode .btn-header,
+  body.dark-mode select.input-form,
+  body.dark-mode input.input-form,
+  body.dark-mode textarea.input-form { background:#1e293b !important; color:#e2e8f0 !important; border-color:#334155 !important; }
+  body.dark-mode table { background:#1e293b !important; }
+  body.dark-mode th { background:#1e293b !important; color:#94a3b8 !important; }
+  body.dark-mode td[style*="background: white"], body.dark-mode td[style*="background:white"] { background:#1e293b !important; }
+  body.dark-mode .task-card[style*="background: white"], body.dark-mode .task-card[style*="background:white"] { background:#334155 !important; border-color:#475569 !important; }
+  body.dark-mode .task-card div { color:#e2e8f0 !important; }
+  body.dark-mode main { background:#0f172a !important; }
+  body.dark-mode ::placeholder { color:#64748b !important; }
   @media print {
     @page { size: A4 landscape; margin: 5mm; }
     * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
@@ -79,11 +96,19 @@ const dbTaskToLocal = (t) => {
       files = [{ name: t.file_name, data: t.file_data }];
     }
   }
-  return { internalId: t.internal_id, id: t.id, customer: t.customer, reference: t.reference, instructions: t.instructions || '', date: t.date, techIds: t.tech_ids || [], completed: t.completed, isAbsence: t.is_absence, files };
+  return { internalId: t.internal_id, id: t.id, customer: t.customer, reference: t.reference, instructions: t.instructions || '', date: t.date, techIds: t.tech_ids || [], completed: t.completed, isAbsence: t.is_absence, files, hours: t.hours != null ? Number(t.hours) : null };
 };
 const localTaskToDB = (t) => {
   const filesJson = t.files?.length ? JSON.stringify(t.files) : null;
-  return { internal_id: t.internalId, id: t.id, customer: t.customer, reference: t.reference, instructions: t.instructions || '', date: t.date, tech_ids: t.techIds, completed: t.completed || false, is_absence: t.isAbsence || false, file_name: filesJson ? '__multi__' : null, file_data: filesJson };
+  return { internal_id: t.internalId, id: t.id, customer: t.customer, reference: t.reference, instructions: t.instructions || '', date: t.date, tech_ids: t.techIds, completed: t.completed || false, is_absence: t.isAbsence || false, file_name: filesJson ? '__multi__' : null, file_data: filesJson, hours: t.hours != null && t.hours !== '' ? Number(t.hours) : null };
+};
+const logAudit = async (sbClient, user, action, detail) => {
+  try {
+    await sbClient.from('audit_log').insert({
+      actor: user ? `${user.name} ${user.surname}` : 'Desconocido',
+      action, detail, created_at: new Date().toISOString()
+    });
+  } catch (e) { /* tabla opcional: si no existe, se ignora silenciosamente */ }
 };
 const dbTechToLocal = (t) => ({ id: t.id, name: t.name, surname: t.surname, username: t.username, password: t.password, role: t.role, shiftType: t.shift_type, sortOrder: t.sort_order ?? 999 });
 
@@ -152,8 +177,14 @@ function TaskCard({ task, highlight, isAdmin, onView, onToggle, onEdit, onCopy, 
   const [hover, setHover] = useState(false);
   const bg = highlight ? '#ccff00' : task.isAbsence ? '#fef3c7' : task.completed ? '#dcfce7' : 'white';
   const border = highlight ? '#99cc00' : task.isAbsence ? '#fcd34d' : task.completed ? '#86efac' : '#bfdbfe';
+  const tooltipParts = [];
+  if (task.instructions) tooltipParts.push(`📋 ${task.instructions.slice(0,140)}${task.instructions.length>140?'…':''}`);
+  if (task.files?.length) tooltipParts.push(`📎 ${task.files.length} archivo(s) adjunto(s)`);
+  if (task.hours) tooltipParts.push(`⏱ ${task.hours}h estimadas`);
+  tooltipParts.push(task.completed ? '✅ Completado' : '⏳ Pendiente');
+  const tooltip = tooltipParts.join('\n');
   return (
-    <div onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)} onClick={onView}
+    <div onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)} onClick={onView} title={tooltip}
       className="task-card" style={{background:bg,border:`1.5px solid ${border}`,borderRadius:'6px',padding:'4px 6px',position:'relative',cursor:'pointer'}}>
       {hover && (
         <div onClick={e => e.stopPropagation()} style={{position:'absolute',top:'2px',right:'2px',display:'flex',gap:'2px',background:'rgba(255,255,255,0.97)',borderRadius:'4px',padding:'2px',boxShadow:'0 1px 4px rgba(0,0,0,0.15)',zIndex:20}}>
@@ -210,21 +241,24 @@ function ThDay({ date, idx, isH, todayISO, tasks, techs }) {
   );
 }
 
-function TechRow({ t, weekDates, holidays, tasks, isAdmin, techWeekClipboard, clipboard, searchTerm, onNewTask, onPasteTask, onEditTask, onCopyTask, onDeleteTask, onToggleCompleted, onViewTask, onCopyTechWeek, onPasteTechWeek }) {
+function TechRow({ t, weekDates, holidays, tasks, isAdmin, techWeekClipboard, clipboard, searchTerm, onNewTask, onPasteTask, onEditTask, onCopyTask, onDeleteTask, onToggleCompleted, onViewTask, onCopyTechWeek, onPasteTechWeek, onDuplicateNextWeek }) {
   const [hovering, setHovering] = useState(false);
+  const shiftColor = t.shiftType==='INTENSIVA'?'#16a34a':'#2563eb';
+  const shiftBg = t.shiftType==='INTENSIVA'?'#dcfce7':'#dbeafe';
   return (
     <tr style={{borderBottom:'2px solid #94a3b8'}}>
       <td style={{padding:'12px',background:'white',position:'sticky',left:0,zIndex:10,borderRight:'1px solid #94a3b8',boxShadow:'2px 0 4px rgba(0,0,0,0.05)',minWidth:'144px'}}>
         <div onMouseEnter={() => setHovering(true)} onMouseLeave={() => setHovering(false)} style={{display:'flex',alignItems:'center',gap:'8px',position:'relative'}}>
-          <div style={{width:'10px',height:'10px',borderRadius:'50%',background:t.shiftType==='INTENSIVA'?'#22c55e':'#3b82f6',flexShrink:0}} />
           <div style={{overflow:'hidden',flex:1,minWidth:0}}>
             <div style={{fontWeight:900,textTransform:'uppercase',fontSize:'12px',color:'#1e293b',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.name}</div>
             <div style={{fontWeight:700,color:'#475569',fontSize:'11px',textTransform:'uppercase',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.surname}</div>
+            <span style={{display:'inline-block',marginTop:'3px',fontSize:'8px',fontWeight:900,color:shiftColor,background:shiftBg,border:`1px solid ${shiftColor}`,borderRadius:'4px',padding:'1px 5px',textTransform:'uppercase',letterSpacing:'0.03em'}}>{t.shiftType}</span>
           </div>
           {isAdmin && hovering && (
             <div style={{position:'absolute',top:'50%',right:0,transform:'translateY(-50%)',display:'flex',gap:'2px',background:'rgba(255,255,255,0.92)',padding:'2px',borderRadius:'6px',boxShadow:'0 1px 4px rgba(0,0,0,0.15)',border:'1px solid #e2e8f0',zIndex:1}}>
-              <button onClick={() => onCopyTechWeek(t.id)} style={{padding:'4px',color:'#94a3b8',background:'none',border:'none',cursor:'pointer',display:'flex'}}><CopyPlus size={11} /></button>
-              {techWeekClipboard && <button onClick={() => onPasteTechWeek(t.id)} style={{padding:'4px',color:'white',background:'#2563eb',border:'none',cursor:'pointer',borderRadius:'4px',display:'flex'}}><ClipboardPaste size={11} /></button>}
+              <button onClick={() => onDuplicateNextWeek(t.id)} title="Duplicar semana a la siguiente" style={{padding:'4px',color:'#94a3b8',background:'none',border:'none',cursor:'pointer',display:'flex'}}><RefreshCw size={11} /></button>
+              <button onClick={() => onCopyTechWeek(t.id)} title="Copiar semana" style={{padding:'4px',color:'#94a3b8',background:'none',border:'none',cursor:'pointer',display:'flex'}}><CopyPlus size={11} /></button>
+              {techWeekClipboard && <button onClick={() => onPasteTechWeek(t.id)} title="Pegar semana" style={{padding:'4px',color:'white',background:'#2563eb',border:'none',cursor:'pointer',borderRadius:'4px',display:'flex'}}><ClipboardPaste size={11} /></button>}
             </div>
           )}
         </div>
@@ -244,7 +278,7 @@ function TechRow({ t, weekDates, holidays, tasks, isAdmin, techWeekClipboard, cl
               </div>
             ) : (
               dayTasks.map(task => {
-                const highlight = searchTerm && task.id.includes(searchTerm);
+                const highlight = searchTerm && (task.id.includes(searchTerm) || task.customer?.includes(searchTerm) || task.reference?.includes(searchTerm));
                 return (
                   <TaskCard key={task.internalId} task={task} highlight={highlight} isAdmin={isAdmin}
                     onView={() => onViewTask(task)} onToggle={() => onToggleCompleted(task.internalId)}
@@ -287,46 +321,91 @@ function App() {
   const [formCustomer, setFormCustomer] = useState("");
   const [formReference, setFormReference] = useState("");
   const [pendingFiles, setPendingFiles] = useState([]);
+  const [auditLog, setAuditLog] = useState([]);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [darkMode, setDarkMode] = useState(() => localStorage.getItem('obraplan_dark') === '1');
+  const [toasts, setToasts] = useState([]);
+  const [offline, setOffline] = useState(false);
+  const skipNextToastRef = React.useRef(false);
+  const firstLoadRef = React.useRef(true);
 
   const isAdmin = useMemo(() => user?.role === 'admin', [user]);
 
-  const loadAll = useCallback(async () => {
-    setLoading(true);
+  const pushToast = useCallback((msg, type = 'info') => {
+    const id = newId();
+    setToasts(prev => [...prev, { id, msg, type }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 4000);
+  }, []);
+
+  useEffect(() => {
+    document.body.classList.toggle('dark-mode', darkMode);
+    localStorage.setItem('obraplan_dark', darkMode ? '1' : '0');
+  }, [darkMode]);
+
+  const loadAll = useCallback(async (isBackground = false) => {
+    if (!isBackground) setLoading(true);
     try {
-      const [{ data: td }, { data: ad }, { data: hd }, { data: tkd }] = await Promise.all([
+      const [{ data: td, error: e1 }, { data: ad, error: e2 }, { data: hd, error: e3 }, { data: tkd, error: e4 }] = await Promise.all([
         sb.from('techs').select('*').order('sort_order', { ascending: true }).order('id'),
         sb.from('admins').select('*').order('id'),
         sb.from('holidays').select('*'),
         sb.from('tasks').select('*'),
       ]);
-      setTechs((td || []).map(dbTechToLocal));
-      setAdmins(ad || []);
-      setHolidays((hd || []).map(h => h.date));
-      setTasks((tkd || []).map(dbTaskToLocal));
-    } catch(e) { console.error(e); }
-    setLoading(false);
+      if (e1 || e2 || e3 || e4) throw (e1 || e2 || e3 || e4);
+      const newTechs = (td || []).map(dbTechToLocal);
+      const newAdmins = ad || [];
+      const newHolidays = (hd || []).map(h => h.date);
+      const newTasks = (tkd || []).map(dbTaskToLocal);
+      setTechs(newTechs); setAdmins(newAdmins); setHolidays(newHolidays); setTasks(newTasks);
+      setOffline(false);
+      try { localStorage.setItem('obraplan_cache', JSON.stringify({ techs: newTechs, admins: newAdmins, holidays: newHolidays, tasks: newTasks, savedAt: Date.now() })); } catch(e) {}
+    } catch(e) {
+      console.error(e);
+      // Sin conexión: intentar cargar la última copia guardada localmente
+      try {
+        const cached = JSON.parse(localStorage.getItem('obraplan_cache') || 'null');
+        if (cached) {
+          setTechs(cached.techs || []); setAdmins(cached.admins || []);
+          setHolidays(cached.holidays || []); setTasks(cached.tasks || []);
+          setOffline(true);
+        }
+      } catch(e2) {}
+    }
+    if (!isBackground) setLoading(false);
   }, []);
 
-  useEffect(() => { loadAll(); }, [loadAll]);
+  useEffect(() => {
+    // Pintado instantáneo con la última caché mientras se sincroniza con Supabase
+    try {
+      const cached = JSON.parse(localStorage.getItem('obraplan_cache') || 'null');
+      if (cached) {
+        setTechs(cached.techs || []); setAdmins(cached.admins || []);
+        setHolidays(cached.holidays || []); setTasks(cached.tasks || []);
+        setLoading(false);
+      }
+    } catch(e) {}
+    loadAll();
+  }, [loadAll]);
 
   // Tiempo real
   useEffect(() => {
+    const notify = (msg) => { if (skipNextToastRef.current) { skipNextToastRef.current = false; return; } pushToast(msg); };
     const ch = sb.channel('obraplan-rt')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => {
-        sb.from('tasks').select('*').then(({ data }) => { if (data) setTasks(data.map(dbTaskToLocal)); });
+        sb.from('tasks').select('*').then(({ data }) => { if (data) { setTasks(data.map(dbTaskToLocal)); notify('📋 Tareas actualizadas por otro usuario'); } });
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'techs' }, () => {
-        sb.from('techs').select('*').order('sort_order', { ascending: true }).order('id').then(({ data }) => { if (data) setTechs(data.map(dbTechToLocal)); });
+        sb.from('techs').select('*').order('sort_order', { ascending: true }).order('id').then(({ data }) => { if (data) { setTechs(data.map(dbTechToLocal)); notify('👥 Lista de técnicos actualizada'); } });
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'holidays' }, () => {
-        sb.from('holidays').select('*').then(({ data }) => { if (data) setHolidays(data.map(h => h.date)); });
+        sb.from('holidays').select('*').then(({ data }) => { if (data) { setHolidays(data.map(h => h.date)); notify('📅 Festivos actualizados'); } });
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'admins' }, () => {
-        sb.from('admins').select('*').then(({ data }) => { if (data) setAdmins(data); });
+        sb.from('admins').select('*').then(({ data }) => { if (data) { setAdmins(data); notify('🛡️ Administradores actualizados'); } });
       })
       .subscribe();
     return () => sb.removeChannel(ch);
-  }, []);
+  }, [pushToast]);
 
   const handleLogin = (e) => {
     e.preventDefault();
@@ -355,6 +434,7 @@ function App() {
   const handleSaveTask = async (e) => {
     e.preventDefault(); setSaving(true);
     const instructions = e.target.instructions ? e.target.instructions.value : '';
+    const hoursVal = e.target.hoursEstimated ? e.target.hoursEstimated.value : '';
     // Start with existing files, then add newly picked ones
     let files = editingTask?.files ? [...editingTask.files] : [];
     if (pendingFiles.length > 0) {
@@ -365,12 +445,14 @@ function App() {
       })));
       files = [...files, ...newFileObjs];
     }
-    const taskData = { internalId: editingTask?.internalId || newId(), id: formTaskId, customer: formCustomer, reference: formReference, instructions, date: selectedSlot.dateISO, techIds: tempAssignedTechs, completed: editingTask?.completed || false, isAbsence: false, files };
+    const taskData = { internalId: editingTask?.internalId || newId(), id: formTaskId, customer: formCustomer, reference: formReference, instructions, date: selectedSlot.dateISO, techIds: tempAssignedTechs, completed: editingTask?.completed || false, isAbsence: false, files, hours: hoursVal };
     let err = null;
+    skipNextToastRef.current = true;
     if (editingTask) { const r = await sb.from('tasks').update(localTaskToDB(taskData)).eq('internal_id', editingTask.internalId); err = r.error; }
     else { const r = await sb.from('tasks').insert(localTaskToDB(taskData)); err = r.error; }
     setSaving(false);
     if (err) { alert('Error al guardar tarea: ' + err.message); return; }
+    logAudit(sb, user, editingTask ? 'EDITAR_TAREA' : 'CREAR_TAREA', `${taskData.id} - ${taskData.customer}`);
     closeModal();
   };
 
@@ -379,12 +461,17 @@ function App() {
     const nv = !task.completed;
     setTasks(tasks.map(t => t.internalId === id ? { ...t, completed: nv } : t));
     if (selectedTask?.internalId === id) setSelectedTask(prev => ({ ...prev, completed: nv }));
+    skipNextToastRef.current = true;
     await sb.from('tasks').update({ completed: nv }).eq('internal_id', id);
+    logAudit(sb, user, nv ? 'COMPLETAR_TAREA' : 'REABRIR_TAREA', `${task.id} - ${task.customer}`);
   };
 
   const handleDeleteTask = async (id) => {
+    const task = tasks.find(t => t.internalId === id);
     setTasks(tasks.filter(t => t.internalId !== id));
+    skipNextToastRef.current = true;
     await sb.from('tasks').delete().eq('internal_id', id);
+    if (task) logAudit(sb, user, 'ELIMINAR_TAREA', `${task.id} - ${task.customer}`);
   };
 
   const copyTechWeek = (techId) => {
@@ -406,11 +493,32 @@ function App() {
       const newDate = formatDateISO(oldDate);
       return { ...t, internalId: newId(), date: newDate, techIds: [targetTechId], completed: false };
     }).filter(t => !tasks.some(x => x.techIds.includes(targetTechId) && x.date === t.date && x.isAbsence));
+    const conflicts = newTasks.filter(t => tasks.some(x => x.techIds.includes(targetTechId) && x.date === t.date && !x.isAbsence)).length;
+    if (conflicts > 0 && !window.confirm(`${conflicts} día(s) ya tienen tareas asignadas para este técnico. ¿Continuar y añadir de todas formas?`)) { setTechWeekClipboard(null); return; }
     if (newTasks.length) {
+      skipNextToastRef.current = true;
       const { error } = await sb.from('tasks').insert(newTasks.map(localTaskToDB));
       if (error) alert('Error al pegar: ' + error.message);
+      else logAudit(sb, user, 'PEGAR_SEMANA_TECNICO', `${newTasks.length} tareas`);
     }
     setTechWeekClipboard(null);
+  };
+
+  const duplicateTechToNextWeek = async (techId) => {
+    const dates = weekDates.map(d => formatDateISO(d));
+    const sourceTasks = tasks.filter(t => t.techIds.includes(techId) && dates.includes(t.date) && !t.isAbsence);
+    if (sourceTasks.length === 0) { pushToast('⚠️ No hay tareas esta semana para duplicar'); return; }
+    if (!window.confirm(`¿Duplicar ${sourceTasks.length} tarea(s) de este técnico a la semana siguiente?`)) return;
+    const newTasks = sourceTasks.map(t => {
+      const oldDate = new Date(t.date + 'T12:00:00');
+      oldDate.setDate(oldDate.getDate() + 7);
+      return { ...t, internalId: newId(), date: formatDateISO(oldDate), completed: false };
+    }).filter(t => !tasks.some(x => x.techIds.includes(techId) && x.date === t.date && x.isAbsence));
+    skipNextToastRef.current = true;
+    const { error } = await sb.from('tasks').insert(newTasks.map(localTaskToDB));
+    if (error) { alert('Error al duplicar: ' + error.message); return; }
+    logAudit(sb, user, 'DUPLICAR_SEMANA_SIGUIENTE', `${newTasks.length} tareas`);
+    pushToast('✅ Tareas duplicadas a la próxima semana');
   };
 
   const copyFullQuadrant = () => {
@@ -430,9 +538,12 @@ function App() {
       const newDate = formatDateISO(oldDate);
       return { ...t, internalId: newId(), date: newDate, completed: false };
     }).filter(t => !t.techIds.some(tid => tasks.some(x => x.techIds.includes(tid) && x.date === t.date && x.isAbsence)));
+    if (!window.confirm(`Se van a pegar ${newTasks.length} tareas en esta semana. ¿Continuar?`)) { setFullQuadrantClipboard(null); return; }
     if (newTasks.length) {
+      skipNextToastRef.current = true;
       const { error } = await sb.from('tasks').insert(newTasks.map(localTaskToDB));
       if (error) alert('Error al pegar cuadrante: ' + error.message);
+      else logAudit(sb, user, 'PEGAR_CUADRANTE', `${newTasks.length} tareas`);
     }
     setFullQuadrantClipboard(null);
   };
@@ -458,6 +569,47 @@ function App() {
   };
 
   const closeModal = () => { setModalMode(null); setEditingTask(null); setEditingUser(null); setSelectedTask(null); setTempAssignedTechs([]); setShowTechDropdown(false); };
+
+  const openAuditLog = async () => {
+    setModalMode('audit'); setAuditLoading(true);
+    const { data, error } = await sb.from('audit_log').select('*').order('created_at', { ascending: false }).limit(100);
+    setAuditLog(error ? [] : (data || []));
+    setAuditLoading(false);
+  };
+
+  const hoursReport = useMemo(() => {
+    const dates = weekDates.map(d => formatDateISO(d));
+    return visibleTechs.map(t => {
+      const techTasks = tasks.filter(tk => tk.techIds.includes(t.id) && dates.includes(tk.date) && !tk.isAbsence);
+      const total = techTasks.reduce((sum, tk) => sum + (Number(tk.hours) || 0), 0);
+      return { name: `${t.name} ${t.surname}`, total, count: techTasks.length, withoutHours: techTasks.filter(tk => !tk.hours).length };
+    }).sort((a,b) => b.total - a.total);
+  }, [visibleTechs, tasks, weekDates]);
+
+  const exportToExcel = () => {
+    const dates = weekDates.map(d => formatDateISO(d));
+    const rows = [];
+    visibleTechs.forEach(t => {
+      dates.forEach(dISO => {
+        const dayTasks = tasks.filter(tk => tk.techIds.includes(t.id) && tk.date === dISO);
+        if (dayTasks.length === 0) {
+          rows.push({ Técnico: `${t.name} ${t.surname}`, Fecha: dISO, ID: '', Cliente: '', Referencia: '', Horas: '', Estado: 'SIN TAREA' });
+        } else {
+          dayTasks.forEach(tk => {
+            rows.push({
+              Técnico: `${t.name} ${t.surname}`, Fecha: tk.date, ID: tk.id, Cliente: tk.customer,
+              Referencia: tk.reference, Horas: tk.hours || '', Estado: tk.isAbsence ? tk.id : (tk.completed ? 'COMPLETADO' : 'PENDIENTE')
+            });
+          });
+        }
+      });
+    });
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, `Semana ${weekNum}`);
+    XLSX.writeFile(wb, `OBRAPLAN_Semana${weekNum}_${formatDateISO(weekDates[0])}.xlsx`);
+    pushToast('📊 Excel exportado correctamente');
+  };
 
   const handleClearWeek = async () => {
     if (!window.confirm('¿Borrar TODAS las tareas de esta semana? Esta acción no se puede deshacer.')) return;
@@ -501,19 +653,26 @@ function App() {
 
   const handlePasteTask = async (techId, dateISO) => {
     if (!clipboard || tasks.some(x => x.techIds.includes(techId) && x.date === dateISO && x.isAbsence)) return;
+    const existing = tasks.filter(x => x.techIds.includes(techId) && x.date === dateISO && !x.isAbsence);
+    if (existing.length > 0) {
+      if (!window.confirm(`Ya hay ${existing.length} tarea(s) ese día para este técnico. ¿Añadir de todas formas?`)) return;
+    }
+    skipNextToastRef.current = true;
     await sb.from('tasks').insert(localTaskToDB({ ...clipboard, internalId: newId(), date: dateISO, techIds: [techId] }));
+    logAudit(sb, user, 'PEGAR_TAREA', `${clipboard.id} - ${clipboard.customer}`);
   };
 
   const handleAddHoliday = async (e) => {
     e.preventDefault();
     const date = e.target.holidayDate.value;
-    if (date && !holidays.includes(date)) await sb.from('holidays').insert({ date });
+    if (date && !holidays.includes(date)) { await sb.from('holidays').insert({ date }); logAudit(sb, user, 'AÑADIR_FESTIVO', date); }
     setModalMode(null);
   };
 
   const handleDeleteHoliday = async (date) => {
     if (!window.confirm(`¿Eliminar festivo ${date}?`)) return;
     await sb.from('holidays').delete().eq('date', date);
+    logAudit(sb, user, 'ELIMINAR_FESTIVO', date);
   };
 
   const openUserForm = (role, u = null) => { setUserFormRole(role); setEditingUser(u); setModalMode('userForm'); };
@@ -536,6 +695,7 @@ function App() {
     }
     setSaving(false);
     if (error) { alert('Error al guardar: ' + error.message); return; }
+    logAudit(sb, user, editingUser ? 'EDITAR_USUARIO' : 'CREAR_USUARIO', `${formName} ${formSurname} (${userFormRole})`);
     setModalMode(userFormRole === 'tech' ? 'techList' : 'adminList');
   };
 
@@ -543,6 +703,7 @@ function App() {
     if (!window.confirm(`¿Eliminar a ${u.name} ${u.surname}?`)) return;
     if (u.role === 'tech') await sb.from('techs').delete().eq('id', u.id);
     else await sb.from('admins').delete().eq('id', u.id);
+    logAudit(sb, user, 'ELIMINAR_USUARIO', `${u.name} ${u.surname} (${u.role})`);
   };
 
   const changeWeek = (w) => { const n = new Date(currentMonday); n.setDate(currentMonday.getDate() + w*7); setCurrentMonday(n); };
@@ -583,6 +744,12 @@ function App() {
   return (
     <div style={{minHeight:'100vh',background:'#f8fafc',fontFamily:'Arial,sans-serif',fontSize:'12px'}}>
       {saving && <div style={{position:'fixed',top:0,left:0,right:0,zIndex:100,background:'#2563eb',color:'white',textAlign:'center',padding:'5px',fontSize:'10px',fontWeight:900,textTransform:'uppercase',letterSpacing:'2px'}}>Guardando...</div>}
+      {offline && <div className="no-print" style={{position:'fixed',top:saving?'26px':0,left:0,right:0,zIndex:99,background:'#dc2626',color:'white',textAlign:'center',padding:'5px',fontSize:'10px',fontWeight:900,textTransform:'uppercase',letterSpacing:'2px'}}>⚠️ Sin conexión — mostrando la última copia guardada localmente</div>}
+      <div className="no-print" style={{position:'fixed',top:'16px',right:'16px',zIndex:200,display:'flex',flexDirection:'column',gap:'8px',maxWidth:'320px'}}>
+        {toasts.map(t => (
+          <div key={t.id} className="toast-anim" style={{background:'#1e293b',color:'white',padding:'10px 14px',borderRadius:'12px',fontSize:'11px',fontWeight:700,boxShadow:'0 10px 25px rgba(0,0,0,0.3)'}}>{t.msg}</div>
+        ))}
+      </div>
       <header style={{position:'sticky',top:0,zIndex:30,background:'white',borderBottom:'1px solid #94a3b8',boxShadow:'0 1px 3px rgba(0,0,0,0.1)'}}>
         <div style={{maxWidth:'1800px',margin:'0 auto',padding:'10px 16px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:'16px',flexWrap:'wrap'}}>
           <div style={{display:'flex',alignItems:'center',gap:'16px',flexWrap:'wrap'}}>
@@ -599,7 +766,7 @@ function App() {
             </div>
             <div style={{position:'relative'}}>
               <span style={{position:'absolute',left:'10px',top:'9px',color:'#94a3b8'}}><Search size={14} /></span>
-              <input type="text" placeholder="BUSCAR ID..." style={{paddingLeft:'32px',paddingRight:'16px',paddingTop:'0',paddingBottom:'0',height:'34px',background:'#f1f5f9',border:'1px solid #cbd5e1',borderRadius:'12px',fontSize:'11px',fontWeight:900,textTransform:'uppercase',outline:'none',width:'160px'}} value={searchTerm} onChange={e => setSearchTerm(e.target.value.toUpperCase())} />
+              <input type="text" placeholder="BUSCAR ID, CLIENTE O REF..." style={{paddingLeft:'32px',paddingRight:'16px',paddingTop:'0',paddingBottom:'0',height:'34px',background:'#f1f5f9',border:'1px solid #cbd5e1',borderRadius:'12px',fontSize:'11px',fontWeight:900,textTransform:'uppercase',outline:'none',width:'190px'}} value={searchTerm} onChange={e => setSearchTerm(e.target.value.toUpperCase())} />
             </div>
           </div>
           <div style={{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap'}}>
@@ -615,7 +782,12 @@ function App() {
               <button onClick={() => window.print()} className="btn-header no-print" style={{padding:'6px 8px'}} title="Imprimir A4 horizontal"><Printer size={15} /></button>
               <button onClick={handleClearWeek} className="btn-header no-print" style={{padding:'6px 8px',color:'#dc2626',borderColor:'#fca5a5'}} title="Borrar toda la semana"><Trash2 size={15} /></button>
               <button onClick={openReorder} className="btn-header no-print" style={{padding:'6px 8px'}} title="Ordenar técnicos"><FilterIcon size={15} color="#2563eb" /></button>
+              <div style={{width:'1px',height:'24px',background:'#cbd5e1',margin:'0 4px'}} />
+              <button onClick={exportToExcel} className="btn-header no-print" title="Exportar semana a Excel"><FileText size={13} color="#16a34a" /> EXCEL</button>
+              <button onClick={() => setModalMode('report')} className="btn-header no-print" title="Informe de horas"><Info size={13} color="#0891b2" /> INFORME</button>
+              <button onClick={openAuditLog} className="btn-header no-print" title="Historial de cambios"><FileText size={13} color="#7c3aed" /> HISTORIAL</button>
             </>)}
+            <button onClick={() => setDarkMode(d => !d)} className="btn-header no-print" title="Modo oscuro / claro" style={{padding:'6px 8px'}}>{darkMode ? '☀️' : '🌙'}</button>
             <div style={{width:'1px',height:'24px',background:'#cbd5e1',margin:'0 4px'}} />
             <div style={{textAlign:'right',marginRight:'8px',lineHeight:1}}>
               <p style={{fontSize:'10px',fontWeight:900,color:'#1e293b',textTransform:'uppercase'}}>{user?.name} {user?.surname}</p>
@@ -698,7 +870,7 @@ function App() {
                   onNewTask={handleOpenNewTask} onPasteTask={handlePasteTask} onEditTask={handleEditTask}
                   onCopyTask={handleCopyTask} onDeleteTask={handleDeleteTask} onToggleCompleted={toggleTaskCompleted}
                   onViewTask={(task) => { setSelectedTask(task); setModalMode('viewTask'); }}
-                  onCopyTechWeek={copyTechWeek} onPasteTechWeek={pasteTechWeek} />
+                  onCopyTechWeek={copyTechWeek} onPasteTechWeek={pasteTechWeek} onDuplicateNextWeek={duplicateTechToNextWeek} />
               ))}
             </tbody>
           </table>
@@ -715,6 +887,7 @@ function App() {
           <div style={{padding:'24px',display:'flex',flexDirection:'column',gap:'16px'}}>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px'}}><InfoBox label="ID Tarea" value={selectedTask.id} /><InfoBox label="Cliente" value={selectedTask.customer} /></div>
             <InfoBox label="Referencia" value={selectedTask.reference} />
+            {!!selectedTask.hours && <InfoBox label="Horas estimadas" value={`${selectedTask.hours}h`} />}
             <InfoBox label="Instrucciones" value={selectedTask.instructions || 'Sin instrucciones adicionales.'} />
             {selectedTask.files?.length > 0 && (
               <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
@@ -795,6 +968,7 @@ function App() {
               </div>
               {showTechDropdown && (<div style={{position:'absolute',zIndex:40,marginTop:'4px',width:'100%',background:'white',border:'1px solid #e2e8f0',borderRadius:'12px',boxShadow:'0 10px 25px rgba(0,0,0,0.1)',padding:'8px',maxHeight:'160px',overflowY:'auto'}}>{techs.map(t => (<div key={t.id} onClick={() => toggleTechInTask(t.id)} style={{padding:'8px 10px',borderRadius:'8px',cursor:'pointer',fontSize:'12px',fontWeight:700,background:tempAssignedTechs.includes(t.id)?'#eff6ff':'transparent',color:tempAssignedTechs.includes(t.id)?'#1d4ed8':'#334155'}}>{t.name} {t.surname}</div>))}</div>)}
             </div>
+            <div><label className="label-form">Horas estimadas</label><input type="number" step="0.5" min="0" name="hoursEstimated" className="input-form" defaultValue={editingTask?.hours || ''} placeholder="Ej: 2.5" /></div>
             <div><label className="label-form">Instrucciones</label><textarea className="input-form" name="instructions" defaultValue={editingTask?.instructions} placeholder="Detalles..." style={{height:'80px',resize:'none'}} /></div>
             <div>
               <label className="label-form">Documentos adjuntos</label>
@@ -896,6 +1070,59 @@ function App() {
               <button type="submit" disabled={saving} style={{flex:1,padding:'12px',borderRadius:'12px',background:'#f59e0b',color:'white',fontSize:'11px',fontWeight:900,textTransform:'uppercase',border:'none',cursor:'pointer',opacity:saving?0.7:1}}>CONFIRMAR</button>
             </div>
           </form>
+        </Modal>
+      )}
+
+      {modalMode === 'report' && (
+        <Modal onClose={closeModal} maxWidth="480px">
+          <div style={{padding:'16px',borderBottom:'1px solid #e2e8f0',display:'flex',alignItems:'center',justifyContent:'space-between',background:'#f8fafc'}}>
+            <div><h3 style={{fontWeight:900,color:'#1e293b',textTransform:'uppercase',letterSpacing:'2px',fontSize:'12px',margin:0}}>Informe de Horas</h3><p style={{fontSize:'10px',fontWeight:700,color:'#2563eb',marginTop:'4px',textTransform:'uppercase'}}>Semana {weekNum}</p></div>
+            <button onClick={closeModal} style={{background:'none',border:'none',cursor:'pointer'}}><X size={18} /></button>
+          </div>
+          <div style={{padding:'16px',display:'flex',flexDirection:'column',gap:'8px',maxHeight:'420px',overflowY:'auto'}}>
+            {hoursReport.length === 0 && <p style={{fontSize:'11px',color:'#94a3b8',textAlign:'center',padding:'16px'}}>Sin datos para esta semana.</p>}
+            {hoursReport.map((r, i) => (
+              <div key={i} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 14px',background:'#f8fafc',borderRadius:'10px',border:'1px solid #e2e8f0'}}>
+                <div>
+                  <div style={{fontWeight:900,fontSize:'12px',color:'#1e293b',textTransform:'uppercase'}}>{r.name}</div>
+                  <div style={{fontSize:'10px',color:'#94a3b8',fontWeight:700}}>{r.count} tarea{r.count !== 1 ? 's' : ''}{r.withoutHours > 0 ? ` · ${r.withoutHours} sin horas` : ''}</div>
+                </div>
+                <div style={{fontWeight:900,fontSize:'16px',color:'#0891b2'}}>{r.total}h</div>
+              </div>
+            ))}
+            {hoursReport.length > 0 && (
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 14px',marginTop:'4px',borderTop:'2px solid #e2e8f0'}}>
+                <span style={{fontWeight:900,fontSize:'11px',color:'#475569',textTransform:'uppercase'}}>Total semana</span>
+                <span style={{fontWeight:900,fontSize:'18px',color:'#1e293b'}}>{hoursReport.reduce((s,r) => s+r.total,0)}h</span>
+              </div>
+            )}
+          </div>
+        </Modal>
+      )}
+
+      {modalMode === 'audit' && (
+        <Modal onClose={closeModal} maxWidth="560px">
+          <div style={{padding:'16px',borderBottom:'1px solid #e2e8f0',display:'flex',alignItems:'center',justifyContent:'space-between',background:'#f8fafc'}}>
+            <h3 style={{fontWeight:900,color:'#1e293b',textTransform:'uppercase',letterSpacing:'2px',fontSize:'12px',margin:0}}>Historial de Cambios</h3>
+            <button onClick={closeModal} style={{background:'none',border:'none',cursor:'pointer'}}><X size={18} /></button>
+          </div>
+          <div style={{padding:'16px',maxHeight:'440px',overflowY:'auto'}}>
+            {auditLoading && <p style={{fontSize:'11px',color:'#94a3b8',textAlign:'center',padding:'16px'}}>Cargando...</p>}
+            {!auditLoading && auditLog.length === 0 && (
+              <p style={{fontSize:'11px',color:'#94a3b8',textAlign:'center',padding:'16px',lineHeight:1.6}}>
+                No hay registros disponibles todavía.<br/>Si es la primera vez, es posible que falte crear la tabla <code>audit_log</code> en Supabase (consulta las instrucciones que te he dado).
+              </p>
+            )}
+            {!auditLoading && auditLog.map((a, i) => (
+              <div key={i} style={{display:'flex',flexDirection:'column',gap:'2px',padding:'8px 12px',borderBottom:'1px solid #f1f5f9'}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                  <span style={{fontWeight:900,fontSize:'11px',color:'#1e293b',textTransform:'uppercase'}}>{a.actor}</span>
+                  <span style={{fontSize:'9px',color:'#94a3b8',fontWeight:700}}>{new Date(a.created_at).toLocaleString('es-ES')}</span>
+                </div>
+                <div style={{fontSize:'10px',color:'#475569'}}><strong style={{color:'#2563eb'}}>{a.action}</strong> — {a.detail}</div>
+              </div>
+            ))}
+          </div>
         </Modal>
       )}
 
