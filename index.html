@@ -273,7 +273,7 @@ function InfoBox({ label, value }) {
   );
 }
 
-function TaskCard({ task, highlight, isAdmin, onView, onToggle, onEdit, onCopy, onDelete }) {
+function TaskCard({ task, highlight, isAdmin, compact, onView, onToggle, onEdit, onCopy, onDelete }) {
   const [hover, setHover] = useState(false);
   const bg = highlight ? '#ccff00' : task.isAbsence ? '#fef3c7' : task.completed ? '#dcfce7' : 'white';
   const border = highlight ? '#99cc00' : task.isAbsence ? '#fcd34d' : task.completed ? '#86efac' : '#bfdbfe';
@@ -295,12 +295,12 @@ function TaskCard({ task, highlight, isAdmin, onView, onToggle, onEdit, onCopy, 
         </div>
       )}
       <div style={{width:'100%'}}>
-        <div style={{fontWeight:900,color:'#1e293b',textTransform:'uppercase',fontSize:'12px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',paddingRight: hover ? '52px' : '0'}}>{task.id} - {task.customer}</div>
-        <div style={{fontSize:'11px',fontWeight:700,color:'#475569',textTransform:'uppercase',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',lineHeight:1,paddingRight: hover ? '52px' : '0'}}>{task.reference}</div>
+        <div style={{fontWeight:900,color:'#1e293b',textTransform:'uppercase',fontSize:compact?'11px':'12px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',paddingRight: hover ? '52px' : '0'}}>{task.id} - {task.customer}</div>
+        <div style={{fontSize:compact?'10px':'11px',fontWeight:700,color:'#475569',textTransform:'uppercase',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',lineHeight:1,paddingRight: hover ? '52px' : '0'}}>{task.reference}</div>
         {!isAdmin && !task.isAbsence && (task.instructions || task.files?.length) && (
           <div style={{display:'flex',gap:'4px',marginTop:'3px',flexWrap:'wrap'}}>
-            {task.instructions && <span style={{fontSize:'9px',fontWeight:900,color:'#d97706',background:'#fef3c7',border:'1px solid #fcd34d',borderRadius:'4px',padding:'1px 5px',textTransform:'uppercase',letterSpacing:'0.03em'}}>📋 Instrucciones</span>}
-            {task.files?.length > 0 && <span style={{fontSize:'9px',fontWeight:900,color:'#7c3aed',background:'#f5f3ff',border:'1px solid #c4b5fd',borderRadius:'4px',padding:'1px 5px',textTransform:'uppercase',letterSpacing:'0.03em'}}>📎 {task.files.length > 1 ? `${task.files.length} docs` : 'Documento'}</span>}
+            {task.instructions && <span style={{fontSize:compact?'8px':'9px',fontWeight:900,color:'#d97706',background:'#fef3c7',border:'1px solid #fcd34d',borderRadius:'4px',padding:'1px 5px',textTransform:'uppercase',letterSpacing:'0.03em'}}>📋 Instrucciones</span>}
+            {task.files?.length > 0 && <span style={{fontSize:compact?'8px':'9px',fontWeight:900,color:'#7c3aed',background:'#f5f3ff',border:'1px solid #c4b5fd',borderRadius:'4px',padding:'1px 5px',textTransform:'uppercase',letterSpacing:'0.03em'}}>📎 {task.files.length > 1 ? `${task.files.length} docs` : 'Documento'}</span>}
           </div>
         )}
       </div>
@@ -341,7 +341,7 @@ function ThDay({ date, idx, isH, todayISO, tasks, techs }) {
   );
 }
 
-function TechRow({ t, weekDates, holidays, tasks, isAdmin, techWeekClipboard, clipboard, searchTerm, onNewTask, onPasteTask, onEditTask, onCopyTask, onDeleteTask, onToggleCompleted, onViewTask, onCopyTechWeek, onPasteTechWeek, onDuplicateNextWeek }) {
+function TechRow({ t, weekDates, holidays, tasks, isAdmin, techWeekClipboard, clipboard, searchTerm, compact, onNewTask, onPasteTask, onEditTask, onCopyTask, onDeleteTask, onToggleCompleted, onViewTask, onCopyTechWeek, onPasteTechWeek, onDuplicateNextWeek }) {
   const [hovering, setHovering] = useState(false);
   const shiftColor = t.shiftType==='INTENSIVA'?'#16a34a':'#2563eb';
   const shiftBg = t.shiftType==='INTENSIVA'?'#dcfce7':'#dbeafe';
@@ -380,7 +380,7 @@ function TechRow({ t, weekDates, holidays, tasks, isAdmin, techWeekClipboard, cl
               dayTasks.map(task => {
                 const highlight = searchTerm && (task.id.includes(searchTerm) || task.customer?.includes(searchTerm) || task.reference?.includes(searchTerm));
                 return (
-                  <TaskCard key={task.internalId} task={task} highlight={highlight} isAdmin={isAdmin}
+                  <TaskCard key={task.internalId} task={task} highlight={highlight} isAdmin={isAdmin} compact={compact}
                     onView={() => onViewTask(task)} onToggle={() => onToggleCompleted(task.internalId)}
                     onEdit={() => onEditTask(task)} onCopy={() => onCopyTask(task)} onDelete={() => onDeleteTask(task.internalId)} />
                 );
@@ -1102,7 +1102,7 @@ function App() {
                   <colgroup><col style={{width:'170px'}} />{weekDates.map((_, i) => <col key={i} style={{width:'calc((100% - 170px) / 5)'}} />)}</colgroup>
                   <tbody>
                     {(monitorLoop ? [0, 1] : [0]).flatMap(dup => visibleTechs.map(t => (
-                      <TechRow key={`${dup}-${t.id}`} t={t} weekDates={weekDates} holidays={holidays} tasks={tasks} isAdmin={false}
+                      <TechRow key={`${dup}-${t.id}`} t={t} weekDates={weekDates} holidays={holidays} tasks={tasks} isAdmin={false} compact={true}
                         techWeekClipboard={null} clipboard={null} searchTerm=""
                         onNewTask={noop} onPasteTask={noop} onEditTask={noop}
                         onCopyTask={noop} onDeleteTask={noop} onToggleCompleted={noop}
