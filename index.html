@@ -49,6 +49,8 @@
   body.dark-mode .task-card div { color:#e2e8f0 !important; }
   body.dark-mode main { background:#0f172a !important; }
   body.dark-mode ::placeholder { color:#64748b !important; }
+  .monitor-scroll { scrollbar-width: none; -ms-overflow-style: none; }
+  .monitor-scroll::-webkit-scrollbar { display: none; width: 0; height: 0; }
   @media print {
     @page { size: A4 landscape; margin: 5mm; }
     * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
@@ -1063,8 +1065,8 @@ function App() {
               <img src="logo.jpg" style={{height:'40px',objectFit:'contain'}} alt="Logo" />
             </div>
             <div>
-              <div style={{fontSize:'20px',fontWeight:900,color:th.text,textTransform:'uppercase',letterSpacing:'1px'}}>Semana {weekNum}</div>
-              <div style={{fontSize:'14px',fontWeight:700,color:th.subText,textTransform:'uppercase'}}>{formatLongDateWithWeekdayEs(monitorClock)}</div>
+              <div style={{fontSize:'20px',fontWeight:900,color:th.text,textTransform:'uppercase',letterSpacing:'1px'}}>{formatLongDateWithWeekdayEs(monitorClock)}</div>
+              <div style={{fontSize:'14px',fontWeight:700,color:th.subText,textTransform:'uppercase'}}>Semana {weekNum}</div>
             </div>
           </div>
           <div style={{display:'flex',alignItems:'center',gap:'18px',flexWrap:'wrap'}}>
@@ -1093,7 +1095,7 @@ function App() {
               </table>
             </div>
           </div>
-          <div ref={monitorScrollRef} style={{flex:1,overflow:'auto'}}>
+          <div ref={monitorScrollRef} className="monitor-scroll" style={{flex:1,overflow:'auto'}}>
             <div style={{zoom:1.08}}>
               <div style={{background:'white',borderRadius:'0 0 16px 16px',border:`2px solid ${th.tableBorder}`,borderTop:'none',overflow:'hidden',boxShadow:'0 10px 30px rgba(0,0,0,0.4)'}}>
                 <table style={{width:'100%',borderCollapse:'collapse',tableLayout:'fixed',minWidth:'1000px'}}>
