@@ -176,48 +176,13 @@ const Tv = (p) => <svg xmlns="http://www.w3.org/2000/svg" width={p.size||16} hei
 const SunIcon = (p) => <svg xmlns="http://www.w3.org/2000/svg" width={p.size||16} height={p.size||16} viewBox="0 0 24 24" fill="none" stroke={p.color||"currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>;
 const MoonIcon = (p) => <svg xmlns="http://www.w3.org/2000/svg" width={p.size||16} height={p.size||16} viewBox="0 0 24 24" fill="none" stroke={p.color||"currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>;
 
-// --- Reloj tipo "flip clock" (como los relojes de aeropuerto) para el modo MONITOR ---
-function FlipDigitCard({ value, ampm, theme, scale }) {
-  const bg = theme === 'day' ? '#1e293b' : '#0a0a0a';
-  return (
-    <div style={{position:'relative',background:bg,borderRadius:`${12*scale}px`,padding:`${6*scale}px ${18*scale}px`,boxShadow:'0 6px 18px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.06)',overflow:'hidden',minWidth:`${72*scale}px`,textAlign:'center'}}>
-      <div style={{fontSize:`${72*scale}px`,fontWeight:900,color:'#d4d4d8',lineHeight:1,fontFamily:'Arial,sans-serif',fontVariantNumeric:'tabular-nums'}}>{value}</div>
-      <div style={{position:'absolute',left:0,right:0,top:'50%',height:'2px',background:'rgba(0,0,0,0.55)',transform:'translateY(-1px)'}} />
-      {ampm && <div style={{position:'absolute',left:`${10*scale}px`,bottom:`${6*scale}px`,fontSize:`${13*scale}px`,fontWeight:900,color:'#9ca3af',letterSpacing:'1px'}}>{ampm}</div>}
-    </div>
-  );
-}
+// --- Reloj minimalista para el modo MONITOR (fondo negro, texto blanco, sin adornos) ---
 function FlipClock({ date, theme = 'night', scale = 1 }) {
-  let h = date.getHours();
-  const ampm = h >= 12 ? 'PM' : 'AM';
-  h = h % 12; if (h === 0) h = 12;
-  const hh = String(h).padStart(2, '0');
+  const hh = String(date.getHours()).padStart(2, '0');
   const mm = String(date.getMinutes()).padStart(2, '0');
   return (
-    <div style={{display:'flex',alignItems:'center',gap:`${10*scale}px`}}>
-      <FlipDigitCard value={hh} ampm={ampm} theme={theme} scale={scale} />
-      <div style={{fontSize:`${48*scale}px`,fontWeight:900,color:theme==='day'?'#334155':'#475569',lineHeight:1}}>:</div>
-      <FlipDigitCard value={mm} theme={theme} scale={scale} />
-    </div>
-  );
-}
-
-// --- Widget de tiempo y hora en Bilbao (Open-Meteo, sin API key) ---
-function BilbaoWidget({ weather, theme, scale = 1 }) {
-  const bilbaoTime = new Date().toLocaleTimeString('es-ES', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit' });
-  const info = weather ? wmoWeatherInfo(weather.weathercode) : null;
-  const cardBg = theme === 'day' ? 'white' : '#1e293b';
-  const border = theme === 'day' ? '1px solid #e2e8f0' : '1px solid #334155';
-  const textColor = theme === 'day' ? '#1e293b' : 'white';
-  const subColor = theme === 'day' ? '#64748b' : '#94a3b8';
-  return (
-    <div style={{background:cardBg,border,borderRadius:`${16*scale}px`,padding:`${12*scale}px ${20*scale}px`,display:'flex',alignItems:'center',gap:`${14*scale}px`}}>
-      <div style={{fontSize:`${36*scale}px`,lineHeight:1}}>{info ? info.icon : '📍'}</div>
-      <div>
-        <div style={{fontSize:`${11*scale}px`,fontWeight:900,color:subColor,textTransform:'uppercase',letterSpacing:'1px'}}>Bilbao · {bilbaoTime}</div>
-        <div style={{fontSize:`${22*scale}px`,fontWeight:900,color:textColor,lineHeight:1.2}}>{weather ? `${Math.round(weather.temperature)}°C` : '...'}</div>
-        <div style={{fontSize:`${10*scale}px`,fontWeight:700,color:subColor,textTransform:'uppercase'}}>{info ? info.label : 'Cargando'}</div>
-      </div>
+    <div style={{background:'#000',borderRadius:`${10*scale}px`,padding:`${8*scale}px ${22*scale}px`,display:'flex',alignItems:'center',justifyContent:'center'}}>
+      <span style={{fontSize:`${56*scale}px`,fontWeight:900,color:'white',fontFamily:'Arial,sans-serif',fontVariantNumeric:'tabular-nums',lineHeight:1,letterSpacing:'1px'}}>{hh}:{mm}</span>
     </div>
   );
 }
@@ -245,20 +210,6 @@ const DAYS_LONG_ES = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes'
 const formatLongDateEs = (date) => `${String(date.getDate()).padStart(2,'0')} de ${MONTHS_ES[date.getMonth()]} de ${date.getFullYear()}`;
 const formatLongDateWithWeekdayEs = (date) => `${DAYS_LONG_ES[date.getDay()]}, ${formatLongDateEs(date)}`;
 
-// --- Icono/etiqueta según código de tiempo WMO (Open-Meteo) ---
-const wmoWeatherInfo = (code) => {
-  if (code === 0) return { icon: '☀️', label: 'Despejado' };
-  if ([1,2].includes(code)) return { icon: '🌤️', label: 'Parcialmente nublado' };
-  if (code === 3) return { icon: '☁️', label: 'Nublado' };
-  if ([45,48].includes(code)) return { icon: '🌫️', label: 'Niebla' };
-  if ([51,53,55,56,57].includes(code)) return { icon: '🌦️', label: 'Llovizna' };
-  if ([61,63,65,66,67].includes(code)) return { icon: '🌧️', label: 'Lluvia' };
-  if ([71,73,75,77].includes(code)) return { icon: '🌨️', label: 'Nieve' };
-  if ([80,81,82].includes(code)) return { icon: '🌧️', label: 'Chubascos' };
-  if ([85,86].includes(code)) return { icon: '🌨️', label: 'Chubascos de nieve' };
-  if ([95,96,99].includes(code)) return { icon: '⛈️', label: 'Tormenta' };
-  return { icon: '🌡️', label: '—' };
-};
 
 // --- Frase motivacional diaria (rotación automática si el admin no fija una manual) ---
 const MOTIVATIONAL_QUOTES_ES = [
@@ -488,9 +439,9 @@ function App() {
   const [monitorClock, setMonitorClock] = useState(new Date());
   const [monitorTheme, setMonitorTheme] = useState('night'); // 'day' | 'night' — efectivo para esta pantalla
   const [monitorThemeDefault, setMonitorThemeDefault] = useState('night'); // preferencia global guardada por el admin
-  const [bilbaoWeather, setBilbaoWeather] = useState(null);
   const [monitorQuoteOverride, setMonitorQuoteOverride] = useState('');
   const [adminQuoteDraft, setAdminQuoteDraft] = useState('');
+  const [monitorLoop, setMonitorLoop] = useState(false);
 
   // Reloj visible en la pantalla del monitor (actualización fluida cada segundo)
   useEffect(() => {
@@ -542,39 +493,37 @@ function App() {
     return () => clearInterval(iv);
   }, [isMonitor]);
 
-  // Widget de tiempo en Bilbao (Open-Meteo, sin necesidad de API key)
+
+  // Determina si hace falta bucle de scroll (el contenido no cabe en pantalla)
   useEffect(() => {
     if (!isMonitor) return;
-    const fetchWeather = () => {
-      fetch('https://api.open-meteo.com/v1/forecast?latitude=43.263&longitude=-2.935&current_weather=true&timezone=Europe%2FMadrid')
-        .then(r => r.json())
-        .then(d => { if (d?.current_weather) setBilbaoWeather(d.current_weather); })
-        .catch(() => {});
+    const check = () => {
+      const el = monitorScrollRef.current;
+      if (!el) return;
+      const singleHeight = monitorLoop ? el.scrollHeight / 2 : el.scrollHeight;
+      const needsLoop = singleHeight > el.clientHeight + 2;
+      setMonitorLoop(prev => prev !== needsLoop ? needsLoop : prev);
     };
-    fetchWeather();
-    const iv = setInterval(fetchWeather, 15 * 60000);
-    return () => clearInterval(iv);
-  }, [isMonitor]);
+    const t = setTimeout(check, 150);
+    return () => clearTimeout(t);
+  }, [isMonitor, visibleTechs, tasks, monitorTheme, monitorLoop]);
 
-
-  // Auto-scroll vertical continuo (siempre hacia abajo; al llegar al final, salta al principio)
+  // Auto-scroll vertical realmente continuo: las filas se duplican y al pasar la
+  // altura de una "vuelta" se resta esa misma altura de golpe, con lo que el
+  // salto es imperceptible (el contenido que aparece es idéntico al anterior).
   useEffect(() => {
-    if (!isMonitor) return;
-    let pauseCounter = 0, jumping = false;
-    const PAUSE_TICKS = 90; // ~3s de pausa al llegar abajo y al volver arriba (tick de 33ms)
+    if (!isMonitor || !monitorLoop) return;
     const SPEED = 0.805; // 0.7 + 15%
     const iv = setInterval(() => {
       const el = monitorScrollRef.current;
       if (!el) return;
-      const maxScroll = el.scrollHeight - el.clientHeight;
-      if (maxScroll <= 2) return; // todo cabe en pantalla, no hace falta scroll
-      if (pauseCounter > 0) { pauseCounter--; return; }
-      if (jumping) { el.scrollTop = 0; jumping = false; pauseCounter = PAUSE_TICKS; return; }
+      const singleHeight = el.scrollHeight / 2;
+      if (singleHeight <= 2) return;
       el.scrollTop += SPEED;
-      if (el.scrollTop >= maxScroll - 1) { pauseCounter = PAUSE_TICKS; jumping = true; }
+      if (el.scrollTop >= singleHeight) el.scrollTop -= singleHeight;
     }, 33);
     return () => clearInterval(iv);
-  }, [isMonitor]);
+  }, [isMonitor, monitorLoop]);
 
   const pushToast = useCallback((msg, type = 'info') => {
     const id = newId();
@@ -1104,7 +1053,7 @@ function App() {
     const noop = () => {};
     const th = monitorTheme === 'day'
       ? { pageBg:'#f1f5f9', headerBg:'white', headerBorder:'#e2e8f0', text:'#1e293b', subText:'#64748b', tableBorder:'#cbd5e1', quoteBg:'white', quoteBorder:'#e2e8f0' }
-      : { pageBg:'#0f172a', headerBg:'#1e293b', headerBorder:'#334155', text:'white', subText:'#94a3b8', tableBorder:'#334155', quoteBg:'#1e293b', quoteBorder:'#334155' };
+      : { pageBg:'#000000', headerBg:'#000000', headerBorder:'#1a1a1a', text:'white', subText:'#9ca3af', tableBorder:'#1a1a1a', quoteBg:'#000000', quoteBorder:'#1a1a1a' };
     const quoteText = monitorQuoteOverride?.trim() ? monitorQuoteOverride.trim() : getMotivationalQuoteOfDay();
     return (
       <div style={{height:'100vh',width:'100vw',overflow:'hidden',background:th.pageBg,display:'flex',flexDirection:'column',fontFamily:'Arial,sans-serif',transition:'background 0.4s'}}>
@@ -1119,7 +1068,6 @@ function App() {
             </div>
           </div>
           <div style={{display:'flex',alignItems:'center',gap:'18px',flexWrap:'wrap'}}>
-            <BilbaoWidget weather={bilbaoWeather} theme={monitorTheme} scale={1.0} />
             <FlipClock date={monitorClock} theme={monitorTheme} scale={0.5} />
             <div style={{display:'flex',flexDirection:'column',gap:'6px'}}>
               <button onClick={toggleMonitorTheme} style={{padding:'7px',color:th.subText,background:'none',border:`1px solid ${th.headerBorder}`,borderRadius:'9px',cursor:'pointer',display:'flex'}} title="Cambiar a modo día/noche">
@@ -1129,10 +1077,11 @@ function App() {
             </div>
           </div>
         </header>
-        <div ref={monitorScrollRef} style={{flex:1,overflow:'auto',padding:'18px 28px'}}>
-          <div style={{zoom:1.08}}>
-            <div style={{background:'white',borderRadius:'16px',border:`2px solid ${th.tableBorder}`,overflow:'hidden',boxShadow:'0 10px 30px rgba(0,0,0,0.4)'}}>
+        <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',padding:'18px 28px 0'}}>
+          <div style={{zoom:1.08,flexShrink:0}}>
+            <div style={{background:'#f1f5f9',borderRadius:'16px 16px 0 0',border:`2px solid ${th.tableBorder}`,borderBottom:'none',overflow:'hidden'}}>
               <table style={{width:'100%',borderCollapse:'collapse',tableLayout:'fixed',minWidth:'1000px'}}>
+                <colgroup><col style={{width:'170px'}} />{weekDates.map((_, i) => <col key={i} style={{width:'calc((100% - 170px) / 5)'}} />)}</colgroup>
                 <thead>
                   <tr style={{background:'#f1f5f9',borderBottom:'2px solid #94a3b8'}}>
                     <th style={{width:'170px',padding:'14px',textAlign:'left',fontSize:'12px',fontWeight:900,textTransform:'uppercase',color:'#475569'}}>Equipo</th>
@@ -1141,22 +1090,31 @@ function App() {
                     ); })}
                   </tr>
                 </thead>
-                <tbody>
-                  {visibleTechs.map(t => (
-                    <TechRow key={t.id} t={t} weekDates={weekDates} holidays={holidays} tasks={tasks} isAdmin={false}
-                      techWeekClipboard={null} clipboard={null} searchTerm=""
-                      onNewTask={noop} onPasteTask={noop} onEditTask={noop}
-                      onCopyTask={noop} onDeleteTask={noop} onToggleCompleted={noop}
-                      onViewTask={noop} onCopyTechWeek={noop} onPasteTechWeek={noop} onDuplicateNextWeek={noop} />
-                  ))}
-                </tbody>
               </table>
             </div>
           </div>
+          <div ref={monitorScrollRef} style={{flex:1,overflow:'auto'}}>
+            <div style={{zoom:1.08}}>
+              <div style={{background:'white',borderRadius:'0 0 16px 16px',border:`2px solid ${th.tableBorder}`,borderTop:'none',overflow:'hidden',boxShadow:'0 10px 30px rgba(0,0,0,0.4)'}}>
+                <table style={{width:'100%',borderCollapse:'collapse',tableLayout:'fixed',minWidth:'1000px'}}>
+                  <colgroup><col style={{width:'170px'}} />{weekDates.map((_, i) => <col key={i} style={{width:'calc((100% - 170px) / 5)'}} />)}</colgroup>
+                  <tbody>
+                    {(monitorLoop ? [0, 1] : [0]).flatMap(dup => visibleTechs.map(t => (
+                      <TechRow key={`${dup}-${t.id}`} t={t} weekDates={weekDates} holidays={holidays} tasks={tasks} isAdmin={false}
+                        techWeekClipboard={null} clipboard={null} searchTerm=""
+                        onNewTask={noop} onPasteTask={noop} onEditTask={noop}
+                        onCopyTask={noop} onDeleteTask={noop} onToggleCompleted={noop}
+                        onViewTask={noop} onCopyTechWeek={noop} onPasteTechWeek={noop} onDuplicateNextWeek={noop} />
+                    )))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
         </div>
-        <div style={{flexShrink:0,background:th.quoteBg,borderTop:`2px solid ${th.quoteBorder}`,padding:'12px 28px',display:'flex',alignItems:'center',justifyContent:'center',gap:'10px'}}>
+        <div style={{flexShrink:0,marginTop:'14px',background:th.quoteBg,borderTop:`2px solid ${th.quoteBorder}`,padding:'10px 28px',display:'flex',alignItems:'center',justifyContent:'center',gap:'10px'}}>
           <span style={{fontSize:'18px',opacity:0.6}}>💬</span>
-          <span style={{fontSize:'14px',fontWeight:700,fontStyle:'italic',color:th.text,textAlign:'center'}}>{quoteText}</span>
+          <span style={{fontSize:'16px',fontWeight:700,fontStyle:'italic',color:th.text,textAlign:'center',lineHeight:1.1}}>{quoteText}</span>
         </div>
       </div>
     );
