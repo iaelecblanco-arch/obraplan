@@ -296,7 +296,7 @@ function TaskCard({ task, highlight, isAdmin, onView, onToggle, onEdit, onCopy, 
         <div style={{fontWeight:900,color:'#1e293b',textTransform:'uppercase',fontSize:'12px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',paddingRight: hover ? '52px' : '0'}}>{task.id} - {task.customer}</div>
         <div style={{fontSize:'11px',fontWeight:700,color:'#475569',textTransform:'uppercase',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',lineHeight:1,paddingRight: hover ? '52px' : '0'}}>{task.reference}</div>
         {!isAdmin && !task.isAbsence && (task.instructions || task.files?.length) && (
-          <div className="animate-pulse" style={{display:'flex',gap:'4px',marginTop:'3px',flexWrap:'wrap'}}>
+          <div style={{display:'flex',gap:'4px',marginTop:'3px',flexWrap:'wrap'}}>
             {task.instructions && <span style={{fontSize:'9px',fontWeight:900,color:'#d97706',background:'#fef3c7',border:'1px solid #fcd34d',borderRadius:'4px',padding:'1px 5px',textTransform:'uppercase',letterSpacing:'0.03em'}}>📋 Instrucciones</span>}
             {task.files?.length > 0 && <span style={{fontSize:'9px',fontWeight:900,color:'#7c3aed',background:'#f5f3ff',border:'1px solid #c4b5fd',borderRadius:'4px',padding:'1px 5px',textTransform:'uppercase',letterSpacing:'0.03em'}}>📎 {task.files.length > 1 ? `${task.files.length} docs` : 'Documento'}</span>}
           </div>
@@ -1057,18 +1057,18 @@ function App() {
     const quoteText = monitorQuoteOverride?.trim() ? monitorQuoteOverride.trim() : getMotivationalQuoteOfDay();
     return (
       <div style={{height:'100vh',width:'100vw',overflow:'hidden',background:th.pageBg,display:'flex',flexDirection:'column',fontFamily:'Arial,sans-serif',transition:'background 0.4s'}}>
-        <header style={{flexShrink:0,background:th.headerBg,borderBottom:`2px solid ${th.headerBorder}`,padding:'12px 26px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:'16px',flexWrap:'wrap'}}>
-          <div style={{display:'flex',alignItems:'center',gap:'18px'}}>
-            <div style={{background:'white',borderRadius:'9px',padding:'5px 12px',display:'flex'}}>
-              <img src="logo.jpg" style={{height:'29px',objectFit:'contain'}} alt="Logo" />
+        <header style={{flexShrink:0,background:th.headerBg,borderBottom:`2px solid ${th.headerBorder}`,padding:'6px 24px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:'16px',flexWrap:'wrap'}}>
+          <div style={{display:'flex',alignItems:'center',gap:'16px'}}>
+            <div style={{background:'white',borderRadius:'9px',padding:'4px 12px',display:'flex'}}>
+              <img src="logo.jpg" style={{height:'40px',objectFit:'contain'}} alt="Logo" />
             </div>
             <div>
-              <div style={{fontSize:'17px',fontWeight:900,color:th.text,textTransform:'uppercase',letterSpacing:'1px'}}>Semana {weekNum}</div>
-              <div style={{fontSize:'12px',fontWeight:700,color:th.subText,textTransform:'uppercase'}}>{formatLongDateWithWeekdayEs(monitorClock)}</div>
+              <div style={{fontSize:'20px',fontWeight:900,color:th.text,textTransform:'uppercase',letterSpacing:'1px'}}>Semana {weekNum}</div>
+              <div style={{fontSize:'14px',fontWeight:700,color:th.subText,textTransform:'uppercase'}}>{formatLongDateWithWeekdayEs(monitorClock)}</div>
             </div>
           </div>
           <div style={{display:'flex',alignItems:'center',gap:'18px',flexWrap:'wrap'}}>
-            <FlipClock date={monitorClock} theme={monitorTheme} scale={0.5} />
+            <FlipClock date={monitorClock} theme={monitorTheme} scale={0.68} />
             <div style={{display:'flex',flexDirection:'column',gap:'6px'}}>
               <button onClick={toggleMonitorTheme} style={{padding:'7px',color:th.subText,background:'none',border:`1px solid ${th.headerBorder}`,borderRadius:'9px',cursor:'pointer',display:'flex'}} title="Cambiar a modo día/noche">
                 {monitorTheme === 'day' ? <MoonIcon size={15} /> : <SunIcon size={15} />}
@@ -1201,7 +1201,7 @@ function App() {
                         <div style={{fontWeight:900,fontSize:'13px',color:'#1e293b',textTransform:'uppercase'}}>{task.id} - {task.customer}</div>
                         <div style={{fontSize:'12px',color:'#475569',fontWeight:700,textTransform:'uppercase',marginTop:'2px'}}>{task.reference}</div>
                         {!task.isAbsence && (task.instructions || task.files?.length > 0) && (
-                          <div className="animate-pulse" style={{display:'flex',gap:'6px',marginTop:'6px',flexWrap:'wrap'}}>
+                          <div style={{display:'flex',gap:'6px',marginTop:'6px',flexWrap:'wrap'}}>
                             {task.instructions && <span style={{fontSize:'10px',fontWeight:900,color:'#d97706',background:'#fef3c7',border:'1px solid #fcd34d',borderRadius:'6px',padding:'2px 8px',textTransform:'uppercase'}}>📋 Instrucciones</span>}
                             {task.files?.length > 0 && <span style={{fontSize:'10px',fontWeight:900,color:'#7c3aed',background:'#f5f3ff',border:'1px solid #c4b5fd',borderRadius:'6px',padding:'2px 8px',textTransform:'uppercase'}}>📎 {task.files.length > 1 ? `${task.files.length} documentos` : 'Documento adjunto'}</span>}
                           </div>
