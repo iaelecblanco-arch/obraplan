@@ -243,6 +243,7 @@ const getMonday = (d) => { const date = new Date(d); const day = date.getDay(); 
 const MONTHS_ES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 const DAYS_LONG_ES = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
 const formatLongDateEs = (date) => `${String(date.getDate()).padStart(2,'0')} de ${MONTHS_ES[date.getMonth()]} de ${date.getFullYear()}`;
+const formatLongDateWithWeekdayEs = (date) => `${DAYS_LONG_ES[date.getDay()]}, ${formatLongDateEs(date)}`;
 
 // --- Icono/etiqueta según código de tiempo WMO (Open-Meteo) ---
 const wmoWeatherInfo = (code) => {
@@ -257,6 +258,36 @@ const wmoWeatherInfo = (code) => {
   if ([85,86].includes(code)) return { icon: '🌨️', label: 'Chubascos de nieve' };
   if ([95,96,99].includes(code)) return { icon: '⛈️', label: 'Tormenta' };
   return { icon: '🌡️', label: '—' };
+};
+
+// --- Frase motivacional diaria (rotación automática si el admin no fija una manual) ---
+const MOTIVATIONAL_QUOTES_ES = [
+  "El trabajo bien hecho no necesita excusas.",
+  "La seguridad no es cara, es impagable.",
+  "Un buen equipo se nota en los pequeños detalles.",
+  "La calidad se demuestra, no se promete.",
+  "Cada tarea bien hecha construye la reputación de mañana.",
+  "El orden en el trabajo empieza por el orden en la cabeza.",
+  "No hay atajos para un trabajo bien hecho.",
+  "La actitud marca la diferencia entre un trabajo y un oficio.",
+  "Hoy es un buen día para hacerlo bien a la primera.",
+  "La prevención de hoy evita el problema de mañana.",
+  "El buen ambiente de equipo se construye entre todos.",
+  "Ser puntual es la primera forma de respeto al cliente.",
+  "Cuidar las herramientas es cuidar el propio trabajo.",
+  "La comunicación clara evita la mitad de los problemas.",
+  "Un cliente satisfecho es la mejor publicidad.",
+  "La experiencia se gana resolviendo, no evitando.",
+  "Cada jornada segura es una jornada ganada.",
+  "El esfuerzo constante vence al talento sin disciplina.",
+  "Hacer las cosas bien no cuesta más, cuesta menos a la larga.",
+  "El buen trabajo empieza por una buena planificación.",
+];
+const getMotivationalQuoteOfDay = () => {
+  const start = new Date(new Date().getFullYear(), 0, 0);
+  const diff = new Date() - start;
+  const dayOfYear = Math.floor(diff / 86400000);
+  return MOTIVATIONAL_QUOTES_ES[dayOfYear % MOTIVATIONAL_QUOTES_ES.length];
 };
 
 const formatDateISO = (date) => {
@@ -458,6 +489,8 @@ function App() {
   const [monitorTheme, setMonitorTheme] = useState('night'); // 'day' | 'night' — efectivo para esta pantalla
   const [monitorThemeDefault, setMonitorThemeDefault] = useState('night'); // preferencia global guardada por el admin
   const [bilbaoWeather, setBilbaoWeather] = useState(null);
+  const [monitorQuoteOverride, setMonitorQuoteOverride] = useState('');
+  const [adminQuoteDraft, setAdminQuoteDraft] = useState('');
 
   // Reloj visible en la pantalla del monitor (actualización fluida cada segundo)
   useEffect(() => {
@@ -497,6 +530,18 @@ function App() {
     localStorage.setItem('obraplan_monitor_theme_override', next);
   };
 
+  // Frase motivacional: la fija el admin (se revisa cada 5 min por si la cambia)
+  useEffect(() => {
+    if (!isMonitor) return;
+    const fetchQuote = async () => {
+      const { data } = await sb.from('app_settings').select('*').eq('key', 'monitor_quote_custom').maybeSingle();
+      setMonitorQuoteOverride(data?.value || '');
+    };
+    fetchQuote();
+    const iv = setInterval(fetchQuote, 5 * 60000);
+    return () => clearInterval(iv);
+  }, [isMonitor]);
+
   // Widget de tiempo en Bilbao (Open-Meteo, sin necesidad de API key)
   useEffect(() => {
     if (!isMonitor) return;
@@ -512,20 +557,21 @@ function App() {
   }, [isMonitor]);
 
 
-  // Auto-scroll vertical suave para que se vean todos los técnicos en pantallas grandes
+  // Auto-scroll vertical continuo (siempre hacia abajo; al llegar al final, salta al principio)
   useEffect(() => {
     if (!isMonitor) return;
-    let direction = 1, pauseCounter = 0;
-    const PAUSE_TICKS = 90; // ~3s de pausa en cada extremo (tick de 33ms)
+    let pauseCounter = 0, jumping = false;
+    const PAUSE_TICKS = 90; // ~3s de pausa al llegar abajo y al volver arriba (tick de 33ms)
+    const SPEED = 0.805; // 0.7 + 15%
     const iv = setInterval(() => {
       const el = monitorScrollRef.current;
       if (!el) return;
       const maxScroll = el.scrollHeight - el.clientHeight;
       if (maxScroll <= 2) return; // todo cabe en pantalla, no hace falta scroll
       if (pauseCounter > 0) { pauseCounter--; return; }
-      el.scrollTop += direction * 0.7;
-      if (direction === 1 && el.scrollTop >= maxScroll - 1) { direction = -1; pauseCounter = PAUSE_TICKS; }
-      else if (direction === -1 && el.scrollTop <= 1) { direction = 1; pauseCounter = PAUSE_TICKS; }
+      if (jumping) { el.scrollTop = 0; jumping = false; pauseCounter = PAUSE_TICKS; return; }
+      el.scrollTop += SPEED;
+      if (el.scrollTop >= maxScroll - 1) { pauseCounter = PAUSE_TICKS; jumping = true; }
     }, 33);
     return () => clearInterval(iv);
   }, [isMonitor]);
@@ -826,6 +872,8 @@ function App() {
     setModalMode('monitorList');
     const { data } = await sb.from('app_settings').select('*').eq('key', 'monitor_theme').maybeSingle();
     setMonitorThemeDefault(data?.value === 'day' ? 'day' : 'night');
+    const { data: qd } = await sb.from('app_settings').select('*').eq('key', 'monitor_quote_custom').maybeSingle();
+    setAdminQuoteDraft(qd?.value || '');
   };
 
   const saveMonitorThemeDefault = async (value) => {
@@ -834,6 +882,19 @@ function App() {
     if (error) { alert('No se pudo guardar. Puede que falte crear la tabla app_settings en Supabase (ver instrucciones).'); return; }
     logAudit(sb, user, 'CAMBIAR_TEMA_MONITOR', value === 'day' ? 'Modo día' : 'Modo noche');
     pushToast('✅ Preferencia guardada para las pantallas monitor');
+  };
+
+  const saveMonitorQuote = async () => {
+    const { error } = await sb.from('app_settings').upsert({ key: 'monitor_quote_custom', value: adminQuoteDraft.trim() });
+    if (error) { alert('No se pudo guardar. Puede que falte crear la tabla app_settings en Supabase (ver instrucciones).'); return; }
+    logAudit(sb, user, 'CAMBIAR_FRASE_MONITOR', adminQuoteDraft.trim() || '(frase automática)');
+    pushToast('✅ Frase guardada para las pantallas monitor');
+  };
+
+  const clearMonitorQuote = async () => {
+    setAdminQuoteDraft('');
+    const { error } = await sb.from('app_settings').upsert({ key: 'monitor_quote_custom', value: '' });
+    if (!error) pushToast('✅ Se usará la frase automática del día');
   };
 
   const openAuditLog = async () => {
@@ -1042,33 +1103,34 @@ function App() {
     const todayISO = formatDateISO(new Date());
     const noop = () => {};
     const th = monitorTheme === 'day'
-      ? { pageBg:'#f1f5f9', headerBg:'white', headerBorder:'#e2e8f0', text:'#1e293b', subText:'#64748b', tableBorder:'#cbd5e1' }
-      : { pageBg:'#0f172a', headerBg:'#1e293b', headerBorder:'#334155', text:'white', subText:'#94a3b8', tableBorder:'#334155' };
+      ? { pageBg:'#f1f5f9', headerBg:'white', headerBorder:'#e2e8f0', text:'#1e293b', subText:'#64748b', tableBorder:'#cbd5e1', quoteBg:'white', quoteBorder:'#e2e8f0' }
+      : { pageBg:'#0f172a', headerBg:'#1e293b', headerBorder:'#334155', text:'white', subText:'#94a3b8', tableBorder:'#334155', quoteBg:'#1e293b', quoteBorder:'#334155' };
+    const quoteText = monitorQuoteOverride?.trim() ? monitorQuoteOverride.trim() : getMotivationalQuoteOfDay();
     return (
       <div style={{height:'100vh',width:'100vw',overflow:'hidden',background:th.pageBg,display:'flex',flexDirection:'column',fontFamily:'Arial,sans-serif',transition:'background 0.4s'}}>
-        <header style={{flexShrink:0,background:th.headerBg,borderBottom:`2px solid ${th.headerBorder}`,padding:'16px 28px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:'16px',flexWrap:'wrap'}}>
-          <div style={{display:'flex',alignItems:'center',gap:'20px'}}>
-            <div style={{background:'white',borderRadius:'10px',padding:'6px 14px',display:'flex'}}>
-              <img src="logo.jpg" style={{height:'34px',objectFit:'contain'}} alt="Logo" />
+        <header style={{flexShrink:0,background:th.headerBg,borderBottom:`2px solid ${th.headerBorder}`,padding:'12px 26px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:'16px',flexWrap:'wrap'}}>
+          <div style={{display:'flex',alignItems:'center',gap:'18px'}}>
+            <div style={{background:'white',borderRadius:'9px',padding:'5px 12px',display:'flex'}}>
+              <img src="logo.jpg" style={{height:'29px',objectFit:'contain'}} alt="Logo" />
             </div>
             <div>
-              <div style={{fontSize:'20px',fontWeight:900,color:th.text,textTransform:'uppercase',letterSpacing:'1px'}}>Semana {weekNum}</div>
-              <div style={{fontSize:'13px',fontWeight:700,color:th.subText,textTransform:'uppercase'}}>{formatLongDateEs(monitorClock)}</div>
+              <div style={{fontSize:'17px',fontWeight:900,color:th.text,textTransform:'uppercase',letterSpacing:'1px'}}>Semana {weekNum}</div>
+              <div style={{fontSize:'12px',fontWeight:700,color:th.subText,textTransform:'uppercase'}}>{formatLongDateWithWeekdayEs(monitorClock)}</div>
             </div>
           </div>
-          <div style={{display:'flex',alignItems:'center',gap:'20px',flexWrap:'wrap'}}>
-            <BilbaoWidget weather={bilbaoWeather} theme={monitorTheme} scale={0.85} />
-            <FlipClock date={monitorClock} theme={monitorTheme} scale={0.62} />
+          <div style={{display:'flex',alignItems:'center',gap:'18px',flexWrap:'wrap'}}>
+            <BilbaoWidget weather={bilbaoWeather} theme={monitorTheme} scale={1.0} />
+            <FlipClock date={monitorClock} theme={monitorTheme} scale={0.5} />
             <div style={{display:'flex',flexDirection:'column',gap:'6px'}}>
-              <button onClick={toggleMonitorTheme} style={{padding:'8px',color:th.subText,background:'none',border:`1px solid ${th.headerBorder}`,borderRadius:'10px',cursor:'pointer',display:'flex'}} title="Cambiar a modo día/noche">
-                {monitorTheme === 'day' ? <MoonIcon size={16} /> : <SunIcon size={16} />}
+              <button onClick={toggleMonitorTheme} style={{padding:'7px',color:th.subText,background:'none',border:`1px solid ${th.headerBorder}`,borderRadius:'9px',cursor:'pointer',display:'flex'}} title="Cambiar a modo día/noche">
+                {monitorTheme === 'day' ? <MoonIcon size={15} /> : <SunIcon size={15} />}
               </button>
-              <button onClick={() => setUser(null)} style={{padding:'8px',color:th.subText,background:'none',border:'none',cursor:'pointer',display:'flex',opacity:0.4}} title="Salir del modo monitor"><LogOut size={16} /></button>
+              <button onClick={() => setUser(null)} style={{padding:'7px',color:th.subText,background:'none',border:'none',cursor:'pointer',display:'flex',opacity:0.4}} title="Salir del modo monitor"><LogOut size={15} /></button>
             </div>
           </div>
         </header>
-        <div ref={monitorScrollRef} style={{flex:1,overflow:'auto',padding:'22px 28px'}}>
-          <div style={{zoom:1.3}}>
+        <div ref={monitorScrollRef} style={{flex:1,overflow:'auto',padding:'18px 28px'}}>
+          <div style={{zoom:1.08}}>
             <div style={{background:'white',borderRadius:'16px',border:`2px solid ${th.tableBorder}`,overflow:'hidden',boxShadow:'0 10px 30px rgba(0,0,0,0.4)'}}>
               <table style={{width:'100%',borderCollapse:'collapse',tableLayout:'fixed',minWidth:'1000px'}}>
                 <thead>
@@ -1091,6 +1153,10 @@ function App() {
               </table>
             </div>
           </div>
+        </div>
+        <div style={{flexShrink:0,background:th.quoteBg,borderTop:`2px solid ${th.quoteBorder}`,padding:'12px 28px',display:'flex',alignItems:'center',justifyContent:'center',gap:'10px'}}>
+          <span style={{fontSize:'18px',opacity:0.6}}>💬</span>
+          <span style={{fontSize:'14px',fontWeight:700,fontStyle:'italic',color:th.text,textAlign:'center'}}>{quoteText}</span>
         </div>
       </div>
     );
@@ -1424,6 +1490,17 @@ function App() {
                   <button type="button" onClick={() => saveMonitorThemeDefault('night')} style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:'6px',padding:'10px',borderRadius:'10px',border:monitorThemeDefault==='night'?'2px solid #2563eb':'1px solid #e2e8f0',background:monitorThemeDefault==='night'?'#eff6ff':'white',fontSize:'11px',fontWeight:900,textTransform:'uppercase',cursor:'pointer',color:monitorThemeDefault==='night'?'#2563eb':'#64748b'}}><MoonIcon size={14} /> Noche</button>
                 </div>
                 <p style={{fontSize:'10px',color:'#94a3b8',marginTop:'8px'}}>Cada pantalla puede cambiarlo localmente con el botón ☀️/🌙, pero al conectarse por primera vez usará este valor.</p>
+              </div>
+            )}
+            {modalMode === 'monitorList' && (
+              <div style={{background:'#f8fafc',border:'1px solid #e2e8f0',borderRadius:'12px',padding:'14px',marginBottom:'16px'}}>
+                <div className="label-form" style={{marginBottom:'8px'}}>Frase motivacional del banner inferior</div>
+                <textarea className="input-form" rows={2} value={adminQuoteDraft} onChange={e => setAdminQuoteDraft(e.target.value)} placeholder="Escribe aquí la frase de hoy... (déjalo vacío para usar una automática que cambia cada día)" style={{resize:'none'}} />
+                <div style={{display:'flex',gap:'8px',marginTop:'8px'}}>
+                  <button type="button" onClick={saveMonitorQuote} style={{flex:1,padding:'8px',borderRadius:'10px',border:'none',background:'#2563eb',color:'white',fontSize:'11px',fontWeight:900,textTransform:'uppercase',cursor:'pointer'}}>Guardar frase</button>
+                  <button type="button" onClick={clearMonitorQuote} style={{padding:'8px 12px',borderRadius:'10px',border:'1px solid #e2e8f0',background:'white',color:'#64748b',fontSize:'11px',fontWeight:900,textTransform:'uppercase',cursor:'pointer'}}>Usar automática</button>
+                </div>
+                <p style={{fontSize:'10px',color:'#94a3b8',marginTop:'8px'}}>Si no escribes nada, el monitor mostrará una frase motivacional distinta cada día automáticamente. Las pantallas revisan este valor cada 5 minutos.</p>
               </div>
             )}
             <div style={{display:'flex',justifyContent:'flex-end',marginBottom:'16px'}}><button onClick={() => openUserForm(modalMode === 'techList' ? 'tech' : modalMode === 'monitorList' ? 'monitor' : 'admin')} className="btn-header" style={{background:'#2563eb',color:'white',border:'none'}}><Plus size={14} /> AÑADIR</button></div>
