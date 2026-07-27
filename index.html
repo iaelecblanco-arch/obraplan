@@ -49,6 +49,15 @@
   body.dark-mode .task-card div { color:#e2e8f0 !important; }
   body.dark-mode main { background:#0f172a !important; }
   body.dark-mode ::placeholder { color:#64748b !important; }
+  /* Texto genérico ilegible dentro de cabecera y tabla (nombres, títulos, subtítulos) */
+  body.dark-mode header div, body.dark-mode header p, body.dark-mode header h1,
+  body.dark-mode header h2, body.dark-mode header h3 { color:#e2e8f0 !important; }
+  body.dark-mode td[style*="background: white"] div, body.dark-mode td[style*="background:white"] div,
+  body.dark-mode td[style*="background: white"] p, body.dark-mode td[style*="background:white"] p { color:#e2e8f0 !important; }
+  body.dark-mode .main-card div,
+  body.dark-mode .main-card p,
+  body.dark-mode .main-card label { color:#e2e8f0 !important; }
+  body.dark-mode .label-form { color:#94a3b8 !important; }
   .monitor-scroll { scrollbar-width: none; -ms-overflow-style: none; }
   .monitor-scroll::-webkit-scrollbar { display: none; width: 0; height: 0; }
   @media print {
