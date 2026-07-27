@@ -420,6 +420,8 @@ function App() {
   const [dragIdx, setDragIdx] = useState(null);
   const [formCustomer, setFormCustomer] = useState("");
   const [formReference, setFormReference] = useState("");
+  const [formInstructions, setFormInstructions] = useState("");
+  const [autoFilledFiles, setAutoFilledFiles] = useState([]);
   const [pendingFiles, setPendingFiles] = useState([]);
   const [repeatEnabled, setRepeatEnabled] = useState(false);
   const [repeatFreq, setRepeatFreq] = useState('weekly');
@@ -638,12 +640,18 @@ function App() {
   const handleIdChange = (val) => {
     const upperId = val.toUpperCase(); setFormTaskId(upperId);
     const ex = tasks.find(t => t.id === upperId && !t.isAbsence);
-    if (ex) { setFormCustomer(ex.customer); setFormReference(ex.reference); }
+    if (ex) {
+      setFormCustomer(ex.customer);
+      setFormReference(ex.reference);
+      setFormInstructions(ex.instructions || '');
+      // Solo autorrellenamos archivos si es una tarea NUEVA (no al editar una ya existente)
+      if (!editingTask) setAutoFilledFiles(ex.files || []);
+    }
   };
 
   const handleOpenNewTask = (techId, date) => {
     setSelectedSlot({ techId, dateISO: formatDateISO(date) }); setTempAssignedTechs([techId]);
-    setEditingTask(null); setFormTaskId(""); setFormCustomer(""); setFormReference(""); setPendingFiles([]);
+    setEditingTask(null); setFormTaskId(""); setFormCustomer(""); setFormReference(""); setFormInstructions(""); setAutoFilledFiles([]); setPendingFiles([]);
     setRepeatEnabled(false); setRepeatFreq('weekly'); setRepeatCount(4); setModalMode('task');
   };
 
@@ -658,10 +666,10 @@ function App() {
       }
     }
     setSaving(true);
-    const instructions = e.target.instructions ? e.target.instructions.value : '';
+    const instructions = formInstructions;
     const hoursVal = e.target.hoursEstimated ? e.target.hoursEstimated.value : '';
-    // Start with existing files, then add newly picked ones
-    let files = editingTask?.files ? [...editingTask.files] : [];
+    // Start with existing files (al editar) o los autocompletados por ID (al crear), luego se añaden los nuevos
+    let files = editingTask?.files ? [...editingTask.files] : [...autoFilledFiles];
     if (pendingFiles.length > 0) {
       const newFileObjs = await Promise.all(pendingFiles.map(async f => {
         const compressed = await compressImageFile(f);
@@ -916,6 +924,7 @@ function App() {
   const handleEditTask = (task) => {
     if (!isAdmin) return;
     setEditingTask(task); setFormTaskId(task.id); setFormCustomer(task.customer); setFormReference(task.reference);
+    setFormInstructions(task.instructions || ''); setAutoFilledFiles([]);
     setSelectedSlot({ techId: task.techIds[0], dateISO: task.date }); setTempAssignedTechs(task.techIds); setPendingFiles([]);
     setRepeatEnabled(false); setModalMode('task');
   };
@@ -1264,7 +1273,12 @@ function App() {
         <Modal onClose={closeModal}>
           <div style={{padding:'20px',borderBottom:'1px solid #e2e8f0',display:'flex',justifyContent:'space-between',alignItems:'center',background:'#f8fafc'}}>
             <div><h3 style={{fontWeight:900,textTransform:'uppercase',fontSize:'13px',letterSpacing:'2px',color:'#1e293b',margin:0}}>Detalle de Obra</h3><p style={{fontSize:'10px',fontWeight:700,color:'#2563eb',marginTop:'4px',textTransform:'uppercase'}}>{selectedTask.date}</p></div>
-            <button onClick={closeModal} style={{padding:'4px',background:'none',border:'none',cursor:'pointer'}}><X size={20} /></button>
+            <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+              {isAdmin && !selectedTask.isAbsence && (
+                <button onClick={() => handleEditTask(selectedTask)} style={{display:'flex',alignItems:'center',gap:'6px',padding:'8px 14px',background:'#2563eb',color:'white',border:'none',borderRadius:'10px',fontSize:'11px',fontWeight:900,textTransform:'uppercase',cursor:'pointer'}}><Pencil size={13} /> Editar</button>
+              )}
+              <button onClick={closeModal} style={{padding:'4px',background:'none',border:'none',cursor:'pointer'}}><X size={20} /></button>
+            </div>
           </div>
           <div style={{padding:'24px',display:'flex',flexDirection:'column',gap:'16px'}}>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px'}}><InfoBox label="ID Tarea" value={selectedTask.id} /><InfoBox label="Cliente" value={selectedTask.customer} /></div>
@@ -1397,12 +1411,12 @@ function App() {
                 )}
               </div>
             )}
-            <div><label className="label-form">Instrucciones</label><textarea className="input-form" name="instructions" defaultValue={editingTask?.instructions} placeholder="Detalles..." style={{height:'80px',resize:'none'}} /></div>
+            <div><label className="label-form">Instrucciones</label><textarea className="input-form" value={formInstructions} onChange={e => setFormInstructions(e.target.value)} placeholder="Detalles..." style={{height:'80px',resize:'none'}} /></div>
             <div>
               <label className="label-form">Documentos adjuntos</label>
               <input type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.webp,.gif,.txt,.zip" onChange={e => setPendingFiles(prev => [...prev, ...Array.from(e.target.files)])} style={{display:'block',width:'100%',fontSize:'11px',color:'#64748b',marginTop:'4px'}} />
               <p style={{fontSize:'9px',color:'#94a3b8',marginTop:'3px'}}>PDF, Word, Excel, imágenes, etc. Puedes añadir varios a la vez.</p>
-              {/* Existing saved files */}
+              {/* Existing saved files (al editar una tarea ya existente) */}
               {editingTask?.files?.length > 0 && (
                 <div style={{marginTop:'8px',display:'flex',flexDirection:'column',gap:'4px'}}>
                   <p style={{fontSize:'9px',fontWeight:900,color:'#475569',textTransform:'uppercase',marginBottom:'2px'}}>Archivos guardados:</p>
@@ -1411,6 +1425,19 @@ function App() {
                       <span style={{fontSize:'12px'}}>📎</span>
                       <span style={{flex:1,fontSize:'10px',fontWeight:700,color:'#334155',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{f.name}</span>
                       <button type="button" onClick={() => setEditingTask(prev => ({...prev, files: prev.files.filter((_,j) => j !== i)}))} style={{padding:'2px 6px',background:'#fee2e2',color:'#dc2626',border:'none',borderRadius:'6px',fontSize:'10px',fontWeight:900,cursor:'pointer'}}>✕</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {/* Archivos autocompletados al detectar un ID ya existente (tarea nueva) */}
+              {!editingTask && autoFilledFiles.length > 0 && (
+                <div style={{marginTop:'8px',display:'flex',flexDirection:'column',gap:'4px'}}>
+                  <p style={{fontSize:'9px',fontWeight:900,color:'#0891b2',textTransform:'uppercase',marginBottom:'2px'}}>Autocompletado desde el ID "{formTaskId}":</p>
+                  {autoFilledFiles.map((f, i) => (
+                    <div key={i} style={{display:'flex',alignItems:'center',gap:'8px',padding:'5px 8px',background:'#ecfeff',borderRadius:'8px',border:'1px solid #a5f3fc'}}>
+                      <span style={{fontSize:'12px'}}>📎</span>
+                      <span style={{flex:1,fontSize:'10px',fontWeight:700,color:'#0e7490',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{f.name}</span>
+                      <button type="button" onClick={() => setAutoFilledFiles(prev => prev.filter((_,j) => j !== i))} style={{padding:'2px 6px',background:'#fee2e2',color:'#dc2626',border:'none',borderRadius:'6px',fontSize:'10px',fontWeight:900,cursor:'pointer'}}>✕</button>
                     </div>
                   ))}
                 </div>
