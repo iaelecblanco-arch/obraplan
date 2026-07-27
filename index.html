@@ -304,8 +304,8 @@ function TaskCard({ task, highlight, isAdmin, compact, onView, onToggle, onEdit,
         </div>
       )}
       <div style={{width:'100%'}}>
-        <div style={{fontWeight:900,color:'#1e293b',textTransform:'uppercase',fontSize:compact?'11px':'12px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',paddingRight: hover ? '52px' : '0'}}>{task.id} - {task.customer}</div>
-        <div style={{fontSize:compact?'10px':'11px',fontWeight:700,color:'#475569',textTransform:'uppercase',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',lineHeight:1,paddingRight: hover ? '52px' : '0'}}>{task.reference}</div>
+        <div style={{fontWeight:900,color:'#1e293b',textTransform:'uppercase',fontSize:compact?'11px':'12px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',paddingRight: hover ? '52px' : '0'}}>{task.isAbsence ? task.id : `${task.id} - ${task.customer}`}</div>
+        {!task.isAbsence && <div style={{fontSize:compact?'10px':'11px',fontWeight:700,color:'#475569',textTransform:'uppercase',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',lineHeight:1,paddingRight: hover ? '52px' : '0'}}>{task.reference}</div>}
         {!isAdmin && !task.isAbsence && (task.instructions || task.files?.length) && (
           <div style={{display:'flex',gap:'4px',marginTop:'3px',flexWrap:'wrap'}}>
             {task.instructions && <span style={{fontSize:compact?'8px':'9px',fontWeight:900,color:'#d97706',background:'#fef3c7',border:'1px solid #fcd34d',borderRadius:'4px',padding:'1px 5px',textTransform:'uppercase',letterSpacing:'0.03em'}}>📋 Instrucciones</span>}
@@ -317,7 +317,7 @@ function TaskCard({ task, highlight, isAdmin, compact, onView, onToggle, onEdit,
   );
 }
 
-function CellHover({ children, isH, isAdmin, clipboard, onNew, onPaste }) {
+function CellHover({ children, isH, isAdmin, clipboard, onNew, onPaste, canCopyDay, canPasteDay, onCopyDay, onPasteDay }) {
   const [hover, setHover] = useState(false);
   return (
     <td onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
@@ -325,9 +325,11 @@ function CellHover({ children, isH, isAdmin, clipboard, onNew, onPaste }) {
       <div style={{display:'flex',flexDirection:'column',gap:'4px'}}>
         {children}
         {isAdmin && hover && (
-          <div style={{marginTop:'auto',display:'flex',gap:'4px',paddingTop:'4px'}}>
+          <div style={{marginTop:'auto',display:'flex',flexWrap:'wrap',gap:'4px',paddingTop:'4px'}}>
             <button onClick={onNew} style={{flex:1,padding:'4px',border:'1.5px dashed #cbd5e1',borderRadius:'6px',fontSize:'9px',fontWeight:900,textTransform:'uppercase',color:'#94a3b8',background:'none',cursor:'pointer'}}>+ NUEVO</button>
             {clipboard && <button onClick={onPaste} style={{flex:1,padding:'4px',background:'#2563eb',borderRadius:'6px',color:'white',fontWeight:900,fontSize:'9px',textTransform:'uppercase',border:'none',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'4px'}}><ClipboardPaste size={10} color="white" /> PEGAR</button>}
+            {canCopyDay && <button onClick={onCopyDay} title="Copiar día completo a otro técnico" style={{padding:'4px 6px',border:'1px solid #cbd5e1',borderRadius:'6px',background:'none',cursor:'pointer',color:'#94a3b8',display:'flex',alignItems:'center'}}><CopyPlus size={10} /></button>}
+            {canPasteDay && <button onClick={onPasteDay} title="Pegar día completo aquí" style={{padding:'4px 6px',background:'#16a34a',borderRadius:'6px',border:'none',cursor:'pointer',color:'white',display:'flex',alignItems:'center'}}><ClipboardPaste size={10} color="white" /></button>}
           </div>
         )}
       </div>
@@ -350,7 +352,7 @@ function ThDay({ date, idx, isH, todayISO, tasks, techs }) {
   );
 }
 
-function TechRow({ t, weekDates, holidays, tasks, isAdmin, techWeekClipboard, clipboard, searchTerm, compact, onNewTask, onPasteTask, onEditTask, onCopyTask, onDeleteTask, onToggleCompleted, onViewTask, onCopyTechWeek, onPasteTechWeek, onDuplicateNextWeek }) {
+function TechRow({ t, weekDates, holidays, tasks, isAdmin, techWeekClipboard, clipboard, searchTerm, compact, dayClipboard, onNewTask, onPasteTask, onEditTask, onCopyTask, onDeleteTask, onToggleCompleted, onViewTask, onCopyTechWeek, onPasteTechWeek, onDuplicateNextWeek, onCopyDay, onPasteDay }) {
   const [hovering, setHovering] = useState(false);
   const shiftColor = t.shiftType==='INTENSIVA'?'#16a34a':'#2563eb';
   const shiftBg = t.shiftType==='INTENSIVA'?'#dcfce7':'#dbeafe';
@@ -378,9 +380,13 @@ function TechRow({ t, weekDates, holidays, tasks, isAdmin, techWeekClipboard, cl
         const hasAbsence = dayTasks.some(tk => tk.isAbsence);
         // Celda vacía = sin tareas Y (no es festivo O no hay ausencia)
         const isEmpty = dayTasks.length === 0 && !hasAbsence;
+        const canCopyDay = dayTasks.some(tk => !tk.isAbsence);
+        const canPasteDay = dayClipboard && dayClipboard.dateISO === dISO && dayClipboard.techId !== t.id && !hasAbsence;
         return (
           <CellHover key={idx} isH={isH} isAdmin={isAdmin} clipboard={clipboard}
-            onNew={() => onNewTask(t.id, date)} onPaste={() => onPasteTask(t.id, dISO)}>
+            onNew={() => onNewTask(t.id, date)} onPaste={() => onPasteTask(t.id, dISO)}
+            canCopyDay={canCopyDay} canPasteDay={canPasteDay}
+            onCopyDay={() => onCopyDay(t.id, dISO)} onPasteDay={() => onPasteDay(t.id, dISO)}>
             {isEmpty ? (
               <div style={{display:'flex',alignItems:'center',justifyContent:'center',padding:'16px',color:'#dc2626',fontWeight:900,fontSize:'10px',textTransform:'uppercase',textAlign:'center'}}>
                 <span className="animate-pulse">SIN TAREA ASIGNADA</span>
@@ -423,6 +429,7 @@ function App() {
   const [clipboard, setClipboard] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [techWeekClipboard, setTechWeekClipboard] = useState(null);
+  const [dayClipboard, setDayClipboard] = useState(null);
   const [fullQuadrantClipboard, setFullQuadrantClipboard] = useState(null);
   const [formTaskId, setFormTaskId] = useState("");
   const [reorderList, setReorderList] = useState([]);
@@ -768,6 +775,32 @@ function App() {
       else logAudit(sb, user, 'PEGAR_SEMANA_TECNICO', `${newTasks.length} tareas`);
     }
     setTechWeekClipboard(null);
+  };
+
+  const copyDay = (techId, dateISO) => {
+    const dayTasks = tasks.filter(t => t.techIds.includes(techId) && t.date === dateISO && !t.isAbsence);
+    if (dayTasks.length === 0) { pushToast('⚠️ Ese técnico no tiene tareas ese día'); return; }
+    setDayClipboard({ techId, dateISO, tasks: dayTasks });
+    pushToast(`📋 Día copiado (${dayTasks.length} tarea${dayTasks.length !== 1 ? 's' : ''})`);
+  };
+
+  const pasteDay = async (targetTechId, dateISO) => {
+    if (!dayClipboard) return;
+    if (targetTechId === dayClipboard.techId) { setDayClipboard(null); return; }
+    if (tasks.some(x => x.techIds.includes(targetTechId) && x.date === dateISO && x.isAbsence)) {
+      alert('Este técnico tiene una ausencia ese día, no se puede pegar.');
+      setDayClipboard(null);
+      return;
+    }
+    const newTasks = dayClipboard.tasks.map(t => ({ ...t, internalId: newId(), date: dateISO, techIds: [targetTechId], completed: false }));
+    const conflicts = tasks.filter(x => x.techIds.includes(targetTechId) && x.date === dateISO && !x.isAbsence).length;
+    if (conflicts > 0 && !window.confirm(`Ya hay ${conflicts} tarea(s) asignadas ese día para este técnico. ¿Añadir de todas formas?`)) { setDayClipboard(null); return; }
+    skipNextToastRef.current = true;
+    const { error } = await sb.from('tasks').insert(newTasks.map(localTaskToDB));
+    if (error) { alert('Error al pegar: ' + error.message); setDayClipboard(null); return; }
+    logAudit(sb, user, 'PEGAR_DIA_COMPLETO', `${newTasks.length} tareas → técnico ${targetTechId} (${dateISO})`);
+    pushToast('✅ Día completo pegado');
+    setDayClipboard(null);
   };
 
   const duplicateTechToNextWeek = async (techId) => {
@@ -1218,8 +1251,8 @@ function App() {
                     ) : dayTasks.map(task => (
                       <div key={task.internalId} onClick={() => openTaskView(task)}
                         style={{padding:'12px',borderRadius:'12px',border:`1.5px solid ${task.isAbsence?'#fcd34d':task.completed?'#86efac':'#bfdbfe'}`,background:task.isAbsence?'#fef3c7':task.completed?'#dcfce7':'#eff6ff',cursor:'pointer'}}>
-                        <div style={{fontWeight:900,fontSize:'13px',color:'#1e293b',textTransform:'uppercase'}}>{task.id} - {task.customer}</div>
-                        <div style={{fontSize:'12px',color:'#475569',fontWeight:700,textTransform:'uppercase',marginTop:'2px'}}>{task.reference}</div>
+                        <div style={{fontWeight:900,fontSize:'13px',color:'#1e293b',textTransform:'uppercase'}}>{task.isAbsence ? task.id : `${task.id} - ${task.customer}`}</div>
+                        {!task.isAbsence && <div style={{fontSize:'12px',color:'#475569',fontWeight:700,textTransform:'uppercase',marginTop:'2px'}}>{task.reference}</div>}
                         {!task.isAbsence && (task.instructions || task.files?.length > 0) && (
                           <div style={{display:'flex',gap:'6px',marginTop:'6px',flexWrap:'wrap'}}>
                             {task.instructions && <span style={{fontSize:'10px',fontWeight:900,color:'#d97706',background:'#fef3c7',border:'1px solid #fcd34d',borderRadius:'6px',padding:'2px 8px',textTransform:'uppercase'}}>📋 Instrucciones</span>}
@@ -1266,11 +1299,12 @@ function App() {
             <tbody>
               {visibleTechs.map(t => (
                 <TechRow key={t.id} t={t} weekDates={weekDates} holidays={holidays} tasks={tasks} isAdmin={isAdmin}
-                  techWeekClipboard={techWeekClipboard} clipboard={clipboard} searchTerm={searchTerm}
+                  techWeekClipboard={techWeekClipboard} clipboard={clipboard} searchTerm={searchTerm} dayClipboard={dayClipboard}
                   onNewTask={handleOpenNewTask} onPasteTask={handlePasteTask} onEditTask={handleEditTask}
                   onCopyTask={handleCopyTask} onDeleteTask={handleDeleteTask} onToggleCompleted={toggleTaskCompleted}
                   onViewTask={openTaskView}
-                  onCopyTechWeek={copyTechWeek} onPasteTechWeek={pasteTechWeek} onDuplicateNextWeek={duplicateTechToNextWeek} />
+                  onCopyTechWeek={copyTechWeek} onPasteTechWeek={pasteTechWeek} onDuplicateNextWeek={duplicateTechToNextWeek}
+                  onCopyDay={copyDay} onPasteDay={pasteDay} />
               ))}
             </tbody>
           </table>
@@ -1546,7 +1580,7 @@ function App() {
           </div>
           <form onSubmit={handleSaveAbsence} style={{padding:'20px',display:'flex',flexDirection:'column',gap:'16px'}}>
             <div><label className="label-form">Técnico</label><select required name="techId" className="input-form">{techs.map(t => <option key={t.id} value={t.id}>{t.name} {t.surname}</option>)}</select></div>
-            <div><label className="label-form">Concepto</label><select required name="absenceType" className="input-form"><option value="BAJA">BAJA</option><option value="VACACIONES">VACACIONES</option><option value="PERMISO">PERMISO</option></select></div>
+            <div><label className="label-form">Concepto</label><select required name="absenceType" className="input-form"><option value="BAJA">BAJA</option><option value="VACACIONES">VACACIONES</option><option value="PERMISO">PERMISO</option><option value="LIBRE POR HORAS">LIBRE POR HORAS</option></select></div>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px'}}>
               <div><label className="label-form">Inicio</label><input type="date" required name="startDate" className="input-form" /></div>
               <div><label className="label-form">Fin</label><input type="date" required name="endDate" className="input-form" /></div>
