@@ -107,11 +107,11 @@ const dbTaskToLocal = (t) => {
       files = [{ name: t.file_name, data: t.file_data }];
     }
   }
-  return { internalId: t.internal_id, id: t.id, customer: t.customer, reference: t.reference, instructions: t.instructions || '', date: t.date, techIds: t.tech_ids || [], completed: t.completed, isAbsence: t.is_absence, files, hours: t.hours != null ? Number(t.hours) : null };
+  return { internalId: t.internal_id, id: t.id, customer: t.customer, reference: t.reference, instructions: t.instructions || '', observations: t.observations || '', date: t.date, techIds: t.tech_ids || [], completed: t.completed, isAbsence: t.is_absence, files, hours: t.hours != null ? Number(t.hours) : null };
 };
 const localTaskToDB = (t) => {
   const filesJson = t.files?.length ? JSON.stringify(t.files) : null;
-  return { internal_id: t.internalId, id: t.id, customer: t.customer, reference: t.reference, instructions: t.instructions || '', date: t.date, tech_ids: t.techIds, completed: t.completed || false, is_absence: t.isAbsence || false, file_name: filesJson ? '__multi__' : null, file_data: filesJson, hours: t.hours != null && t.hours !== '' ? Number(t.hours) : null };
+  return { internal_id: t.internalId, id: t.id, customer: t.customer, reference: t.reference, instructions: t.instructions || '', observations: t.observations || '', date: t.date, tech_ids: t.techIds, completed: t.completed || false, is_absence: t.isAbsence || false, file_name: filesJson ? '__multi__' : null, file_data: filesJson, hours: t.hours != null && t.hours !== '' ? Number(t.hours) : null };
 };
 const logAudit = async (sbClient, user, action, detail) => {
   try {
@@ -284,15 +284,19 @@ function InfoBox({ label, value }) {
 
 function TaskCard({ task, highlight, isAdmin, compact, onView, onToggle, onEdit, onCopy, onDelete }) {
   const [hover, setHover] = useState(false);
+  const [tipPos, setTipPos] = useState(null);
+  const cardRef = React.useRef(null);
   const bg = highlight ? '#ccff00' : task.isAbsence ? '#fef3c7' : task.completed ? '#dcfce7' : 'white';
   const border = highlight ? '#99cc00' : task.isAbsence ? '#fcd34d' : task.completed ? '#86efac' : '#bfdbfe';
-  const tooltipParts = [];
-  if (task.instructions) tooltipParts.push(`📋 ${task.instructions.slice(0,140)}${task.instructions.length>140?'…':''}`);
-  if (task.files?.length) tooltipParts.push(`📎 ${task.files.length} archivo(s) adjunto(s)`);
-  tooltipParts.push(task.completed ? '✅ Completado' : '⏳ Pendiente');
-  const tooltip = tooltipParts.join('\n');
+  const handleEnter = () => {
+    setHover(true);
+    if (cardRef.current) {
+      const r = cardRef.current.getBoundingClientRect();
+      setTipPos({ top: r.top, left: r.left + r.width / 2 });
+    }
+  };
   return (
-    <div onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)} onClick={onView} title={tooltip}
+    <div ref={cardRef} onMouseEnter={handleEnter} onMouseLeave={() => setHover(false)} onClick={onView}
       className="task-card" style={{background:bg,border:`1.5px solid ${border}`,borderRadius:'6px',padding:'4px 6px',position:'relative',cursor:'pointer'}}>
       {hover && (
         <div onClick={e => e.stopPropagation()} style={{position:'absolute',top:'2px',right:'2px',display:'flex',gap:'2px',background:'rgba(255,255,255,0.97)',borderRadius:'4px',padding:'2px',boxShadow:'0 1px 4px rgba(0,0,0,0.15)',zIndex:20}}>
@@ -300,6 +304,23 @@ function TaskCard({ task, highlight, isAdmin, compact, onView, onToggle, onEdit,
           {isAdmin && !task.isAbsence && <button onClick={onEdit} style={{padding:'2px',background:'none',border:'none',cursor:'pointer',color:'#94a3b8',display:'flex'}}><Pencil size={11} /></button>}
           {isAdmin && !task.isAbsence && <button onClick={onCopy} style={{padding:'2px',background:'none',border:'none',cursor:'pointer',color:'#94a3b8',display:'flex'}}><Copy size={11} /></button>}
           {isAdmin && <button onClick={onDelete} style={{padding:'2px',background:'none',border:'none',cursor:'pointer',color:'#94a3b8',display:'flex'}}><Trash2 size={11} /></button>}
+        </div>
+      )}
+      {hover && tipPos && !task.isAbsence && (task.observations || task.instructions || task.files?.length > 0) && (
+        <div style={{position:'fixed',top:tipPos.top - 8,left:tipPos.left,transform:'translate(-50%, -100%)',background:'#1e293b',color:'#e2e8f0',padding:'10px 14px',borderRadius:'10px',fontSize:'11px',fontWeight:600,lineHeight:1.4,maxWidth:'260px',minWidth:'160px',zIndex:9999,boxShadow:'0 12px 28px rgba(0,0,0,0.35)',pointerEvents:'none',whiteSpace:'normal'}}>
+          {task.observations && (
+            <div style={{marginBottom:(task.instructions || task.files?.length) ? '6px' : 0}}>
+              <div style={{fontSize:'9px',fontWeight:900,color:'#facc15',textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:'2px'}}>📝 Observaciones</div>
+              {task.observations}
+            </div>
+          )}
+          {task.instructions && (
+            <div style={{marginBottom:task.files?.length ? '4px' : 0,opacity:0.9}}>
+              <div style={{fontSize:'9px',fontWeight:900,color:'#94a3b8',textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:'2px'}}>📋 Instrucciones</div>
+              {task.instructions.slice(0,140)}{task.instructions.length>140?'…':''}
+            </div>
+          )}
+          {task.files?.length > 0 && <div style={{opacity:0.8,fontSize:'10px'}}>📎 {task.files.length} archivo(s) adjunto(s)</div>}
         </div>
       )}
       <div style={{width:'100%'}}>
@@ -435,6 +456,7 @@ function App() {
   const [dragIdx, setDragIdx] = useState(null);
   const [formCustomer, setFormCustomer] = useState("");
   const [formReference, setFormReference] = useState("");
+  const [formObservations, setFormObservations] = useState("");
   const [formInstructions, setFormInstructions] = useState("");
   const [autoFilledFiles, setAutoFilledFiles] = useState([]);
   const [pendingFiles, setPendingFiles] = useState([]);
@@ -659,6 +681,7 @@ function App() {
       setFormCustomer(ex.customer);
       setFormReference(ex.reference);
       setFormInstructions(ex.instructions || '');
+      setFormObservations(ex.observations || '');
       // Solo autorrellenamos archivos si es una tarea NUEVA (no al editar una ya existente)
       if (!editingTask) setAutoFilledFiles(ex.files || []);
     }
@@ -666,7 +689,7 @@ function App() {
 
   const handleOpenNewTask = (techId, date) => {
     setSelectedSlot({ techId, dateISO: formatDateISO(date) }); setTempAssignedTechs([techId]);
-    setEditingTask(null); setFormTaskId(""); setFormCustomer(""); setFormReference(""); setFormInstructions(""); setAutoFilledFiles([]); setPendingFiles([]);
+    setEditingTask(null); setFormTaskId(""); setFormCustomer(""); setFormReference(""); setFormInstructions(""); setFormObservations(""); setAutoFilledFiles([]); setPendingFiles([]);
     setRepeatEnabled(false); setRepeatFreq('weekly'); setRepeatCount(4); setModalMode('task');
   };
 
@@ -697,7 +720,7 @@ function App() {
       }));
       files = [...files, ...newFileObjs];
     }
-    const taskData = { internalId: editingTask?.internalId || newId(), id: formTaskId, customer: formCustomer, reference: formReference, instructions, date: selectedSlot.dateISO, techIds: tempAssignedTechs, completed: editingTask?.completed || false, isAbsence: false, files };
+    const taskData = { internalId: editingTask?.internalId || newId(), id: formTaskId, customer: formCustomer, reference: formReference, instructions, observations: formObservations, date: selectedSlot.dateISO, techIds: tempAssignedTechs, completed: editingTask?.completed || false, isAbsence: false, files };
     let err = null;
     skipNextToastRef.current = true;
     if (editingTask) {
@@ -964,7 +987,7 @@ function App() {
   const handleEditTask = (task) => {
     if (!isAdmin) return;
     setEditingTask(task); setFormTaskId(task.id); setFormCustomer(task.customer); setFormReference(task.reference);
-    setFormInstructions(task.instructions || ''); setAutoFilledFiles([]);
+    setFormInstructions(task.instructions || ''); setFormObservations(task.observations || ''); setAutoFilledFiles([]);
     setSelectedSlot({ techId: task.techIds[0], dateISO: task.date }); setTempAssignedTechs(task.techIds); setPendingFiles([]);
     setRepeatEnabled(false); setModalMode('task');
   };
@@ -1315,6 +1338,7 @@ function App() {
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px'}}><InfoBox label="ID Tarea" value={selectedTask.id} /><InfoBox label="Cliente" value={selectedTask.customer} /></div>
             <InfoBox label="Referencia" value={selectedTask.reference} />
             <InfoBox label="Instrucciones" value={selectedTask.instructions || 'Sin instrucciones adicionales.'} />
+            {!!selectedTask.observations && <InfoBox label="Observaciones" value={selectedTask.observations} />}
             {selectedTask.files?.length > 0 && (
               <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
                 <div style={{fontSize:'10px',fontWeight:900,color:'#475569',textTransform:'uppercase',letterSpacing:'0.05em'}}>Documentos adjuntos ({selectedTask.files.length})</div>
@@ -1406,6 +1430,7 @@ function App() {
               <div><label className="label-form">Cliente</label><input required className="input-form" style={{textTransform:'uppercase'}} value={formCustomer} onChange={e => setFormCustomer(e.target.value.toUpperCase())} placeholder="NOMBRE" /></div>
             </div>
             <div><label className="label-form">Referencia de Obra</label><input required className="input-form" style={{textTransform:'uppercase',fontSize:'11px'}} value={formReference} onChange={e => setFormReference(e.target.value.toUpperCase())} placeholder="REFERENCIA" /></div>
+            <div><label className="label-form">Observaciones</label><textarea className="input-form" value={formObservations} onChange={e => setFormObservations(e.target.value)} placeholder="Notas internas visibles al pasar el ratón por la tarjeta..." style={{height:'56px',resize:'none'}} /></div>
             <div style={{position:'relative'}}>
               <label className="label-form">Asignado a:</label>
               <div onClick={() => setShowTechDropdown(!showTechDropdown)} style={{marginTop:'4px',width:'100%',padding:'8px 12px',background:'#f8fafc',border:'1px solid #cbd5e1',borderRadius:'10px',display:'flex',alignItems:'center',justifyContent:'space-between',cursor:'pointer'}}>
