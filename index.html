@@ -289,7 +289,6 @@ function TaskCard({ task, highlight, isAdmin, compact, onView, onToggle, onEdit,
   const tooltipParts = [];
   if (task.instructions) tooltipParts.push(`📋 ${task.instructions.slice(0,140)}${task.instructions.length>140?'…':''}`);
   if (task.files?.length) tooltipParts.push(`📎 ${task.files.length} archivo(s) adjunto(s)`);
-  if (task.hours) tooltipParts.push(`⏱ ${task.hours}h estimadas`);
   tooltipParts.push(task.completed ? '✅ Completado' : '⏳ Pendiente');
   const tooltip = tooltipParts.join('\n');
   return (
@@ -381,7 +380,7 @@ function TechRow({ t, weekDates, holidays, tasks, isAdmin, techWeekClipboard, cl
         // Celda vacía = sin tareas Y (no es festivo O no hay ausencia)
         const isEmpty = dayTasks.length === 0 && !hasAbsence;
         const canCopyDay = dayTasks.some(tk => !tk.isAbsence);
-        const canPasteDay = dayClipboard && dayClipboard.dateISO === dISO && dayClipboard.techId !== t.id && !hasAbsence;
+        const canPasteDay = dayClipboard && !(dayClipboard.techId === t.id && dayClipboard.dateISO === dISO) && !hasAbsence;
         return (
           <CellHover key={idx} isH={isH} isAdmin={isAdmin} clipboard={clipboard}
             onNew={() => onNewTask(t.id, date)} onPaste={() => onPasteTask(t.id, dISO)}
@@ -683,7 +682,6 @@ function App() {
     }
     setSaving(true);
     const instructions = formInstructions;
-    const hoursVal = e.target.hoursEstimated ? e.target.hoursEstimated.value : '';
     // Start with existing files (al editar) o los autocompletados por ID (al crear), luego se añaden los nuevos
     let files = editingTask?.files ? [...editingTask.files] : [...autoFilledFiles];
     if (pendingFiles.length > 0) {
@@ -699,7 +697,7 @@ function App() {
       }));
       files = [...files, ...newFileObjs];
     }
-    const taskData = { internalId: editingTask?.internalId || newId(), id: formTaskId, customer: formCustomer, reference: formReference, instructions, date: selectedSlot.dateISO, techIds: tempAssignedTechs, completed: editingTask?.completed || false, isAbsence: false, files, hours: hoursVal };
+    const taskData = { internalId: editingTask?.internalId || newId(), id: formTaskId, customer: formCustomer, reference: formReference, instructions, date: selectedSlot.dateISO, techIds: tempAssignedTechs, completed: editingTask?.completed || false, isAbsence: false, files };
     let err = null;
     skipNextToastRef.current = true;
     if (editingTask) {
@@ -786,7 +784,7 @@ function App() {
 
   const pasteDay = async (targetTechId, dateISO) => {
     if (!dayClipboard) return;
-    if (targetTechId === dayClipboard.techId) { setDayClipboard(null); return; }
+    if (targetTechId === dayClipboard.techId && dateISO === dayClipboard.dateISO) { setDayClipboard(null); return; }
     if (tasks.some(x => x.techIds.includes(targetTechId) && x.date === dateISO && x.isAbsence)) {
       alert('Este técnico tiene una ausencia ese día, no se puede pegar.');
       setDayClipboard(null);
@@ -913,12 +911,12 @@ function App() {
       dates.forEach(dISO => {
         const dayTasks = tasks.filter(tk => tk.techIds.includes(t.id) && tk.date === dISO);
         if (dayTasks.length === 0) {
-          rows.push({ Técnico: `${t.name} ${t.surname}`, Fecha: dISO, ID: '', Cliente: '', Referencia: '', Horas: '', Estado: 'SIN TAREA' });
+          rows.push({ Técnico: `${t.name} ${t.surname}`, Fecha: dISO, ID: '', Cliente: '', Referencia: '', Estado: 'SIN TAREA' });
         } else {
           dayTasks.forEach(tk => {
             rows.push({
               Técnico: `${t.name} ${t.surname}`, Fecha: tk.date, ID: tk.id, Cliente: tk.customer,
-              Referencia: tk.reference, Horas: tk.hours || '', Estado: tk.isAbsence ? tk.id : (tk.completed ? 'COMPLETADO' : 'PENDIENTE')
+              Referencia: tk.reference, Estado: tk.isAbsence ? tk.id : (tk.completed ? 'COMPLETADO' : 'PENDIENTE')
             });
           });
         }
@@ -1058,15 +1056,6 @@ function App() {
   const changeWeek = (w) => { const n = new Date(currentMonday); n.setDate(currentMonday.getDate() + w*7); setCurrentMonday(n); };
   const toggleTechInTask = (id) => { if (tempAssignedTechs.includes(id)) { if (tempAssignedTechs.length > 1) setTempAssignedTechs(tempAssignedTechs.filter(x => x !== id)); } else setTempAssignedTechs([...tempAssignedTechs, id]); };
   const visibleTechs = useMemo(() => { if (!user) return []; return (isAdmin || isMonitor) ? techs : techs.filter(t => t.id === user.id); }, [user, techs, isAdmin, isMonitor]);
-
-  const hoursReport = useMemo(() => {
-    const dates = weekDates.map(d => formatDateISO(d));
-    return visibleTechs.map(t => {
-      const techTasks = tasks.filter(tk => tk.techIds.includes(t.id) && dates.includes(tk.date) && !tk.isAbsence);
-      const total = techTasks.reduce((sum, tk) => sum + (Number(tk.hours) || 0), 0);
-      return { name: `${t.name} ${t.surname}`, total, count: techTasks.length, withoutHours: techTasks.filter(tk => !tk.hours).length };
-    }).sort((a,b) => b.total - a.total);
-  }, [visibleTechs, tasks, weekDates]);
 
   // CARGA
   if (loading) return (
@@ -1217,7 +1206,6 @@ function App() {
               <button onClick={openReorder} className="btn-header no-print" style={{padding:'6px 8px'}} title="Ordenar técnicos"><FilterIcon size={15} color="#2563eb" /></button>
               <div style={{width:'1px',height:'24px',background:'#cbd5e1',margin:'0 4px'}} />
               <button onClick={exportToExcel} className="btn-header no-print" title="Exportar semana a Excel"><FileText size={13} color="#16a34a" /> EXCEL</button>
-              <button onClick={() => setModalMode('report')} className="btn-header no-print" title="Informe de horas"><Info size={13} color="#0891b2" /> INFORME</button>
               <button onClick={openAuditLog} className="btn-header no-print" title="Historial de cambios"><FileText size={13} color="#7c3aed" /> HISTORIAL</button>
             </>)}
             <button onClick={() => setDarkMode(d => !d)} className="btn-header no-print" title="Modo oscuro / claro" style={{padding:'6px 8px'}}>{darkMode ? '☀️' : '🌙'}</button>
@@ -1326,7 +1314,6 @@ function App() {
           <div style={{padding:'24px',display:'flex',flexDirection:'column',gap:'16px'}}>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px'}}><InfoBox label="ID Tarea" value={selectedTask.id} /><InfoBox label="Cliente" value={selectedTask.customer} /></div>
             <InfoBox label="Referencia" value={selectedTask.reference} />
-            {!!selectedTask.hours && <InfoBox label="Horas estimadas" value={`${selectedTask.hours}h`} />}
             <InfoBox label="Instrucciones" value={selectedTask.instructions || 'Sin instrucciones adicionales.'} />
             {selectedTask.files?.length > 0 && (
               <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
@@ -1429,7 +1416,6 @@ function App() {
               </div>
               {showTechDropdown && (<div style={{position:'absolute',zIndex:40,marginTop:'4px',width:'100%',background:'white',border:'1px solid #e2e8f0',borderRadius:'12px',boxShadow:'0 10px 25px rgba(0,0,0,0.1)',padding:'8px',maxHeight:'160px',overflowY:'auto'}}>{techs.map(t => (<div key={t.id} onClick={() => toggleTechInTask(t.id)} style={{padding:'8px 10px',borderRadius:'8px',cursor:'pointer',fontSize:'12px',fontWeight:700,background:tempAssignedTechs.includes(t.id)?'#eff6ff':'transparent',color:tempAssignedTechs.includes(t.id)?'#1d4ed8':'#334155'}}>{t.name} {t.surname}</div>))}</div>)}
             </div>
-            <div><label className="label-form">Horas estimadas</label><input type="number" step="0.5" min="0" name="hoursEstimated" className="input-form" defaultValue={editingTask?.hours || ''} placeholder="Ej: 2.5" /></div>
             {!editingTask && (
               <div style={{background:'#f8fafc',padding:'12px',borderRadius:'12px',border:'1px solid #e2e8f0'}}>
                 <label style={{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer'}}>
@@ -1590,33 +1576,6 @@ function App() {
               <button type="submit" disabled={saving} style={{flex:1,padding:'12px',borderRadius:'12px',background:'#f59e0b',color:'white',fontSize:'11px',fontWeight:900,textTransform:'uppercase',border:'none',cursor:'pointer',opacity:saving?0.7:1}}>CONFIRMAR</button>
             </div>
           </form>
-        </Modal>
-      )}
-
-      {modalMode === 'report' && (
-        <Modal onClose={closeModal} maxWidth="480px">
-          <div style={{padding:'16px',borderBottom:'1px solid #e2e8f0',display:'flex',alignItems:'center',justifyContent:'space-between',background:'#f8fafc'}}>
-            <div><h3 style={{fontWeight:900,color:'#1e293b',textTransform:'uppercase',letterSpacing:'2px',fontSize:'12px',margin:0}}>Informe de Horas</h3><p style={{fontSize:'10px',fontWeight:700,color:'#2563eb',marginTop:'4px',textTransform:'uppercase'}}>Semana {weekNum}</p></div>
-            <button onClick={closeModal} style={{background:'none',border:'none',cursor:'pointer'}}><X size={18} /></button>
-          </div>
-          <div style={{padding:'16px',display:'flex',flexDirection:'column',gap:'8px',maxHeight:'420px',overflowY:'auto'}}>
-            {hoursReport.length === 0 && <p style={{fontSize:'11px',color:'#94a3b8',textAlign:'center',padding:'16px'}}>Sin datos para esta semana.</p>}
-            {hoursReport.map((r, i) => (
-              <div key={i} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 14px',background:'#f8fafc',borderRadius:'10px',border:'1px solid #e2e8f0'}}>
-                <div>
-                  <div style={{fontWeight:900,fontSize:'12px',color:'#1e293b',textTransform:'uppercase'}}>{r.name}</div>
-                  <div style={{fontSize:'10px',color:'#94a3b8',fontWeight:700}}>{r.count} tarea{r.count !== 1 ? 's' : ''}{r.withoutHours > 0 ? ` · ${r.withoutHours} sin horas` : ''}</div>
-                </div>
-                <div style={{fontWeight:900,fontSize:'16px',color:'#0891b2'}}>{r.total}h</div>
-              </div>
-            ))}
-            {hoursReport.length > 0 && (
-              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 14px',marginTop:'4px',borderTop:'2px solid #e2e8f0'}}>
-                <span style={{fontWeight:900,fontSize:'11px',color:'#475569',textTransform:'uppercase'}}>Total semana</span>
-                <span style={{fontWeight:900,fontSize:'18px',color:'#1e293b'}}>{hoursReport.reduce((s,r) => s+r.total,0)}h</span>
-              </div>
-            )}
-          </div>
         </Modal>
       )}
 
