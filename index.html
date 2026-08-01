@@ -32,6 +32,12 @@
   }
   @media (min-width: 769px) {
     .mobile-cards { display: none !important; }
+    html, body { height: 100%; overflow: hidden; margin: 0; }
+    .app-shell { height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
+    .app-main { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+    .desktop-table { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+    .main-card { flex: 1; min-height: 0; }
+    .table-body-scroll { flex: 1; min-height: 0; }
   }
   @keyframes slideIn { from{opacity:0;transform:translateY(-10px)} to{opacity:1;transform:translateY(0)} }
   .toast-anim { animation: slideIn 0.25s ease; }
@@ -63,14 +69,15 @@
   @media print {
     @page { size: A4 landscape; margin: 5mm; }
     * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
-    html, body { background: white !important; margin: 0 !important; padding: 0 !important; overflow: visible !important; }
+    html, body { background: white !important; margin: 0 !important; padding: 0 !important; overflow: visible !important; height: auto !important; }
     #root { overflow: visible !important; }
+    .app-shell { height: auto !important; overflow: visible !important; display: block !important; }
     header, .no-print { display: none !important; }
-    main { padding: 0 !important; overflow: visible !important; }
-    .desktop-table { display: block !important; overflow: visible !important; }
+    main, .app-main { padding: 0 !important; overflow: visible !important; flex: none !important; display: block !important; }
+    .desktop-table { display: block !important; overflow: visible !important; flex: none !important; }
     .mobile-cards { display: none !important; }
-    .main-card { border-radius: 0 !important; box-shadow: none !important; border: 1px solid #94a3b8 !important; width: 100% !important; max-width: 100% !important; overflow: visible !important; max-height: none !important; }
-    .table-body-scroll { overflow: visible !important; max-height: none !important; }
+    .main-card { border-radius: 0 !important; box-shadow: none !important; border: 1px solid #94a3b8 !important; width: 100% !important; max-width: 100% !important; overflow: visible !important; max-height: none !important; flex: none !important; display: block !important; }
+    .table-body-scroll { overflow: visible !important; max-height: none !important; flex: none !important; }
     table { min-width: 0 !important; width: 100% !important; table-layout: fixed !important; font-size: 9px !important; }
     th, td { overflow: hidden !important; padding: 3px !important; }
     .task-card { break-inside: avoid !important; page-break-inside: avoid !important; font-size: 9px !important; padding: 2px 4px !important; }
@@ -479,16 +486,6 @@ function App() {
   const isAdmin = useMemo(() => user?.role === 'admin', [user]);
   const isMonitor = useMemo(() => user?.role === 'monitor', [user]);
   const monitorScrollRef = React.useRef(null);
-  const appHeaderRef = React.useRef(null);
-  const [appHeaderHeight, setAppHeaderHeight] = useState(64);
-
-  // Medir la altura real del header para acotar el alto del cuadrante (NO se usa con sticky esta vez)
-  useEffect(() => {
-    const measure = () => { if (appHeaderRef.current) setAppHeaderHeight(appHeaderRef.current.offsetHeight); };
-    measure();
-    window.addEventListener('resize', measure);
-    return () => window.removeEventListener('resize', measure);
-  }, []);
   const [monitorClock, setMonitorClock] = useState(new Date());
   const [monitorTheme, setMonitorTheme] = useState('night'); // 'day' | 'night' — efectivo para esta pantalla
   const [monitorThemeDefault, setMonitorThemeDefault] = useState('night'); // preferencia global guardada por el admin
@@ -1200,7 +1197,7 @@ function App() {
   }
 
   return (
-    <div style={{minHeight:'100vh',background:'#f8fafc',fontFamily:'Arial,sans-serif',fontSize:'12px'}}>
+    <div className="app-shell" style={{minHeight:'100vh',background:'#f8fafc',fontFamily:'Arial,sans-serif',fontSize:'12px'}}>
       {saving && <div style={{position:'fixed',top:0,left:0,right:0,zIndex:100,background:'#2563eb',color:'white',textAlign:'center',padding:'5px',fontSize:'10px',fontWeight:900,textTransform:'uppercase',letterSpacing:'2px'}}>Guardando...</div>}
       {offline && <div className="no-print" style={{position:'fixed',top:saving?'26px':0,left:0,right:0,zIndex:99,background:'#dc2626',color:'white',textAlign:'center',padding:'5px',fontSize:'10px',fontWeight:900,textTransform:'uppercase',letterSpacing:'2px'}}>⚠️ Sin conexión — mostrando la última copia guardada localmente</div>}
       <div className="no-print" style={{position:'fixed',top:'16px',right:'16px',zIndex:200,display:'flex',flexDirection:'column',gap:'8px',maxWidth:'320px'}}>
@@ -1208,7 +1205,7 @@ function App() {
           <div key={t.id} className="toast-anim" style={{background:'#1e293b',color:'white',padding:'10px 14px',borderRadius:'12px',fontSize:'11px',fontWeight:700,boxShadow:'0 10px 25px rgba(0,0,0,0.3)'}}>{t.msg}</div>
         ))}
       </div>
-      <header ref={appHeaderRef} style={{position:'sticky',top:0,zIndex:30,background:'white',borderBottom:'1px solid #94a3b8',boxShadow:'0 1px 3px rgba(0,0,0,0.1)'}}>
+      <header style={{position:'sticky',top:0,zIndex:30,background:'white',borderBottom:'1px solid #94a3b8',boxShadow:'0 1px 3px rgba(0,0,0,0.1)'}}>
         <div style={{maxWidth:'1800px',margin:'0 auto',padding:'10px 16px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:'16px',flexWrap:'wrap'}}>
           <div style={{display:'flex',alignItems:'center',gap:'16px',flexWrap:'wrap'}}>
             <div style={{display:'flex',alignItems:'center'}}>
@@ -1256,7 +1253,7 @@ function App() {
         </div>
       </header>
 
-      <main style={{padding:'16px'}}>
+      <main className="app-main" style={{padding:'16px'}}>
         {/* MOBILE VIEW - only for tech, shown on small screens */}
         {!isAdmin && (
           <div className="mobile-cards" style={{flexDirection:'column',gap:'12px',display:'none'}}>
@@ -1311,7 +1308,7 @@ function App() {
         )}
         {/* DESKTOP TABLE */}
         <div className="desktop-table" style={{overflowX:'auto'}}>
-        <div className="main-card" style={{maxWidth:'1800px',margin:'0 auto',background:'white',borderRadius:'16px',border:'2px solid #94a3b8',boxShadow:'0 10px 25px rgba(0,0,0,0.1)',display:'flex',flexDirection:'column',maxHeight:`calc(100vh - ${appHeaderHeight + 48}px)`}}>
+        <div className="main-card" style={{maxWidth:'1800px',margin:'0 auto',background:'white',borderRadius:'16px',border:'2px solid #94a3b8',boxShadow:'0 10px 25px rgba(0,0,0,0.1)',display:'flex',flexDirection:'column'}}>
           <table style={{width:'100%',borderCollapse:'collapse',minWidth:'1000px',tableLayout:'fixed',flexShrink:0}}>
             <colgroup><col style={{width:'144px'}} />{weekDates.map((_, i) => <col key={i} />)}</colgroup>
             <thead>
