@@ -357,12 +357,13 @@ function CellHover({ children, isH, isAdmin, clipboard, onNew, onPaste, canCopyD
   );
 }
 
-function ThDay({ date, idx, isH, todayISO, tasks, techs }) {
+function ThDay({ date, idx, isH, todayISO, tasks, techs, stickyTop }) {
   const dISO = formatDateISO(date);
   const isToday = dISO === todayISO;
   const techsWithoutTask = techs ? techs.filter(t => !tasks.some(tk => tk.techIds.includes(t.id) && tk.date === dISO)).length : 0;
+  const bg = isH ? '#fecaca' : isToday ? '#eff6ff' : (stickyTop != null ? '#f1f5f9' : 'transparent');
   return (
-    <th style={{padding:'8px',textAlign:'center',borderRight:idx<4?'1px solid #94a3b8':'none',background:isH?'#fecaca':isToday?'#eff6ff':'transparent',overflow:'hidden'}}>
+    <th style={{padding:'8px',textAlign:'center',borderRight:idx<4?'1px solid #94a3b8':'none',background:bg,overflow:'hidden',...(stickyTop != null ? {position:'sticky',top:stickyTop,zIndex:20} : {})}}>
       <div style={{fontWeight:900,textTransform:'uppercase',color:isH?'#991b1b':isToday?'#2563eb':'#64748b',whiteSpace:'nowrap',fontSize:'11px',display:'flex',alignItems:'baseline',justifyContent:'center',gap:'4px'}}>
         <span>{DAYS_NAMES[idx]}{isToday ? ' - HOY' : ''}</span>
         <span style={{fontSize:'15px'}}>{date.getDate()}</span>
@@ -400,7 +401,7 @@ function TechRow({ t, weekDates, holidays, tasks, isAdmin, techWeekClipboard, cl
         const hasAbsence = dayTasks.some(tk => tk.isAbsence);
         // Celda vacía = sin tareas Y (no es festivo O no hay ausencia)
         const isEmpty = dayTasks.length === 0 && !hasAbsence;
-        const canCopyDay = dayTasks.some(tk => !tk.isAbsence);
+        const canCopyDay = dayTasks.length > 0;
         const canPasteDay = dayClipboard && !(dayClipboard.techId === t.id && dayClipboard.dateISO === dISO) && !hasAbsence;
         return (
           <CellHover key={idx} isH={isH} isAdmin={isAdmin} clipboard={clipboard}
@@ -477,6 +478,16 @@ function App() {
   const isAdmin = useMemo(() => user?.role === 'admin', [user]);
   const isMonitor = useMemo(() => user?.role === 'monitor', [user]);
   const monitorScrollRef = React.useRef(null);
+  const appHeaderRef = React.useRef(null);
+  const [appHeaderHeight, setAppHeaderHeight] = useState(64);
+
+  // Medir la altura real del header (puede variar si envuelve en pantallas estrechas)
+  useEffect(() => {
+    const measure = () => { if (appHeaderRef.current) setAppHeaderHeight(appHeaderRef.current.offsetHeight); };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, []);
   const [monitorClock, setMonitorClock] = useState(new Date());
   const [monitorTheme, setMonitorTheme] = useState('night'); // 'day' | 'night' — efectivo para esta pantalla
   const [monitorThemeDefault, setMonitorThemeDefault] = useState('night'); // preferencia global guardada por el admin
@@ -799,10 +810,11 @@ function App() {
   };
 
   const copyDay = (techId, dateISO) => {
-    const dayTasks = tasks.filter(t => t.techIds.includes(techId) && t.date === dateISO && !t.isAbsence);
-    if (dayTasks.length === 0) { pushToast('⚠️ Ese técnico no tiene tareas ese día'); return; }
+    const dayTasks = tasks.filter(t => t.techIds.includes(techId) && t.date === dateISO);
+    if (dayTasks.length === 0) { pushToast('⚠️ Ese técnico no tiene nada ese día'); return; }
     setDayClipboard({ techId, dateISO, tasks: dayTasks });
-    pushToast(`📋 Día copiado (${dayTasks.length} tarea${dayTasks.length !== 1 ? 's' : ''})`);
+    const isAbsenceCopy = dayTasks.some(t => t.isAbsence);
+    pushToast(isAbsenceCopy ? '📋 Ausencia copiada' : `📋 Día copiado (${dayTasks.length} tarea${dayTasks.length !== 1 ? 's' : ''})`);
   };
 
   const pasteDay = async (targetTechId, dateISO) => {
@@ -813,14 +825,15 @@ function App() {
       setDayClipboard(null);
       return;
     }
+    const pastingAbsence = dayClipboard.tasks.some(t => t.isAbsence);
     const newTasks = dayClipboard.tasks.map(t => ({ ...t, internalId: newId(), date: dateISO, techIds: [targetTechId], completed: false }));
     const conflicts = tasks.filter(x => x.techIds.includes(targetTechId) && x.date === dateISO && !x.isAbsence).length;
-    if (conflicts > 0 && !window.confirm(`Ya hay ${conflicts} tarea(s) asignadas ese día para este técnico. ¿Añadir de todas formas?`)) { setDayClipboard(null); return; }
+    if (conflicts > 0 && !window.confirm(`Ya hay ${conflicts} tarea(s) asignadas ese día para este técnico. ¿${pastingAbsence ? 'Añadir la ausencia' : 'Añadir'} de todas formas?`)) { setDayClipboard(null); return; }
     skipNextToastRef.current = true;
     const { error } = await sb.from('tasks').insert(newTasks.map(localTaskToDB));
     if (error) { alert('Error al pegar: ' + error.message); setDayClipboard(null); return; }
-    logAudit(sb, user, 'PEGAR_DIA_COMPLETO', `${newTasks.length} tareas → técnico ${targetTechId} (${dateISO})`);
-    pushToast('✅ Día completo pegado');
+    logAudit(sb, user, pastingAbsence ? 'PEGAR_AUSENCIA_DIA' : 'PEGAR_DIA_COMPLETO', `${newTasks.length} → técnico ${targetTechId} (${dateISO})`);
+    pushToast(pastingAbsence ? '✅ Ausencia pegada' : '✅ Día completo pegado');
     setDayClipboard(null);
   };
 
@@ -1194,7 +1207,7 @@ function App() {
           <div key={t.id} className="toast-anim" style={{background:'#1e293b',color:'white',padding:'10px 14px',borderRadius:'12px',fontSize:'11px',fontWeight:700,boxShadow:'0 10px 25px rgba(0,0,0,0.3)'}}>{t.msg}</div>
         ))}
       </div>
-      <header style={{position:'sticky',top:0,zIndex:30,background:'white',borderBottom:'1px solid #94a3b8',boxShadow:'0 1px 3px rgba(0,0,0,0.1)'}}>
+      <header ref={appHeaderRef} style={{position:'sticky',top:0,zIndex:30,background:'white',borderBottom:'1px solid #94a3b8',boxShadow:'0 1px 3px rgba(0,0,0,0.1)'}}>
         <div style={{maxWidth:'1800px',margin:'0 auto',padding:'10px 16px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:'16px',flexWrap:'wrap'}}>
           <div style={{display:'flex',alignItems:'center',gap:'16px',flexWrap:'wrap'}}>
             <div style={{display:'flex',alignItems:'center'}}>
@@ -1301,9 +1314,9 @@ function App() {
           <table style={{width:'100%',borderCollapse:'collapse',minWidth:'1000px',tableLayout:'fixed'}}>
             <thead>
               <tr style={{background:'#f1f5f9',borderBottom:'1px solid #94a3b8'}}>
-                <th style={{width:'144px',padding:'12px',textAlign:'left',fontSize:'11px',fontWeight:900,textTransform:'uppercase',color:'#475569',position:'sticky',left:0,background:'#f1f5f9',zIndex:20,borderRight:'1px solid #94a3b8'}}>Equipo</th>
+                <th style={{width:'144px',padding:'12px',textAlign:'left',fontSize:'11px',fontWeight:900,textTransform:'uppercase',color:'#475569',position:'sticky',left:0,top:appHeaderHeight,background:'#f1f5f9',zIndex:21,borderRight:'1px solid #94a3b8'}}>Equipo</th>
                 { (() => { const todayISO = formatDateISO(new Date()); return weekDates.map((date, idx) => { const isH = holidays.includes(formatDateISO(date)); return (
-                  <ThDay key={idx} date={date} idx={idx} isH={isH} todayISO={todayISO} tasks={tasks} techs={visibleTechs} />
+                  <ThDay key={idx} date={date} idx={idx} isH={isH} todayISO={todayISO} tasks={tasks} techs={visibleTechs} stickyTop={appHeaderHeight} />
                 ); }); })() }
               </tr>
             </thead>
