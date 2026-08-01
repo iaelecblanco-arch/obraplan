@@ -69,7 +69,8 @@
     main { padding: 0 !important; overflow: visible !important; }
     .desktop-table { display: block !important; overflow: visible !important; }
     .mobile-cards { display: none !important; }
-    .main-card { border-radius: 0 !important; box-shadow: none !important; border: 1px solid #94a3b8 !important; width: 100% !important; max-width: 100% !important; overflow: visible !important; }
+    .main-card { border-radius: 0 !important; box-shadow: none !important; border: 1px solid #94a3b8 !important; width: 100% !important; max-width: 100% !important; overflow: visible !important; max-height: none !important; }
+    .table-body-scroll { overflow: visible !important; max-height: none !important; }
     table { min-width: 0 !important; width: 100% !important; table-layout: fixed !important; font-size: 9px !important; }
     th, td { overflow: hidden !important; padding: 3px !important; }
     .task-card { break-inside: avoid !important; page-break-inside: avoid !important; font-size: 9px !important; padding: 2px 4px !important; }
@@ -478,6 +479,16 @@ function App() {
   const isAdmin = useMemo(() => user?.role === 'admin', [user]);
   const isMonitor = useMemo(() => user?.role === 'monitor', [user]);
   const monitorScrollRef = React.useRef(null);
+  const appHeaderRef = React.useRef(null);
+  const [appHeaderHeight, setAppHeaderHeight] = useState(64);
+
+  // Medir la altura real del header para acotar el alto del cuadrante (NO se usa con sticky esta vez)
+  useEffect(() => {
+    const measure = () => { if (appHeaderRef.current) setAppHeaderHeight(appHeaderRef.current.offsetHeight); };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, []);
   const [monitorClock, setMonitorClock] = useState(new Date());
   const [monitorTheme, setMonitorTheme] = useState('night'); // 'day' | 'night' — efectivo para esta pantalla
   const [monitorThemeDefault, setMonitorThemeDefault] = useState('night'); // preferencia global guardada por el admin
@@ -1197,7 +1208,7 @@ function App() {
           <div key={t.id} className="toast-anim" style={{background:'#1e293b',color:'white',padding:'10px 14px',borderRadius:'12px',fontSize:'11px',fontWeight:700,boxShadow:'0 10px 25px rgba(0,0,0,0.3)'}}>{t.msg}</div>
         ))}
       </div>
-      <header style={{position:'sticky',top:0,zIndex:30,background:'white',borderBottom:'1px solid #94a3b8',boxShadow:'0 1px 3px rgba(0,0,0,0.1)'}}>
+      <header ref={appHeaderRef} style={{position:'sticky',top:0,zIndex:30,background:'white',borderBottom:'1px solid #94a3b8',boxShadow:'0 1px 3px rgba(0,0,0,0.1)'}}>
         <div style={{maxWidth:'1800px',margin:'0 auto',padding:'10px 16px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:'16px',flexWrap:'wrap'}}>
           <div style={{display:'flex',alignItems:'center',gap:'16px',flexWrap:'wrap'}}>
             <div style={{display:'flex',alignItems:'center'}}>
@@ -1300,8 +1311,9 @@ function App() {
         )}
         {/* DESKTOP TABLE */}
         <div className="desktop-table" style={{overflowX:'auto'}}>
-        <div className="main-card" style={{maxWidth:'1800px',margin:'0 auto',background:'white',borderRadius:'16px',border:'2px solid #94a3b8',boxShadow:'0 10px 25px rgba(0,0,0,0.1)',overflow:'hidden'}}>
-          <table style={{width:'100%',borderCollapse:'collapse',minWidth:'1000px',tableLayout:'fixed'}}>
+        <div className="main-card" style={{maxWidth:'1800px',margin:'0 auto',background:'white',borderRadius:'16px',border:'2px solid #94a3b8',boxShadow:'0 10px 25px rgba(0,0,0,0.1)',display:'flex',flexDirection:'column',maxHeight:`calc(100vh - ${appHeaderHeight + 48}px)`}}>
+          <table style={{width:'100%',borderCollapse:'collapse',minWidth:'1000px',tableLayout:'fixed',flexShrink:0}}>
+            <colgroup><col style={{width:'144px'}} />{weekDates.map((_, i) => <col key={i} />)}</colgroup>
             <thead>
               <tr style={{background:'#f1f5f9',borderBottom:'1px solid #94a3b8'}}>
                 <th style={{width:'144px',padding:'12px',textAlign:'left',fontSize:'11px',fontWeight:900,textTransform:'uppercase',color:'#475569',position:'sticky',left:0,background:'#f1f5f9',zIndex:20,borderRight:'1px solid #94a3b8'}}>Equipo</th>
@@ -1310,18 +1322,23 @@ function App() {
                 ); }); })() }
               </tr>
             </thead>
-            <tbody>
-              {visibleTechs.map(t => (
-                <TechRow key={t.id} t={t} weekDates={weekDates} holidays={holidays} tasks={tasks} isAdmin={isAdmin}
-                  techWeekClipboard={techWeekClipboard} clipboard={clipboard} searchTerm={searchTerm} dayClipboard={dayClipboard}
-                  onNewTask={handleOpenNewTask} onPasteTask={handlePasteTask} onEditTask={handleEditTask}
-                  onCopyTask={handleCopyTask} onDeleteTask={handleDeleteTask} onToggleCompleted={toggleTaskCompleted}
-                  onViewTask={openTaskView}
-                  onCopyTechWeek={copyTechWeek} onPasteTechWeek={pasteTechWeek} onDuplicateNextWeek={duplicateTechToNextWeek}
-                  onCopyDay={copyDay} onPasteDay={pasteDay} />
-              ))}
-            </tbody>
           </table>
+          <div className="table-body-scroll" style={{overflowY:'auto',borderRadius:'0 0 14px 14px'}}>
+            <table style={{width:'100%',borderCollapse:'collapse',minWidth:'1000px',tableLayout:'fixed'}}>
+              <colgroup><col style={{width:'144px'}} />{weekDates.map((_, i) => <col key={i} />)}</colgroup>
+              <tbody>
+                {visibleTechs.map(t => (
+                  <TechRow key={t.id} t={t} weekDates={weekDates} holidays={holidays} tasks={tasks} isAdmin={isAdmin}
+                    techWeekClipboard={techWeekClipboard} clipboard={clipboard} searchTerm={searchTerm} dayClipboard={dayClipboard}
+                    onNewTask={handleOpenNewTask} onPasteTask={handlePasteTask} onEditTask={handleEditTask}
+                    onCopyTask={handleCopyTask} onDeleteTask={handleDeleteTask} onToggleCompleted={toggleTaskCompleted}
+                    onViewTask={openTaskView}
+                    onCopyTechWeek={copyTechWeek} onPasteTechWeek={pasteTechWeek} onDuplicateNextWeek={duplicateTechToNextWeek}
+                    onCopyDay={copyDay} onPasteDay={pasteDay} />
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
         </div>
       </main>
