@@ -478,16 +478,6 @@ function App() {
   const isAdmin = useMemo(() => user?.role === 'admin', [user]);
   const isMonitor = useMemo(() => user?.role === 'monitor', [user]);
   const monitorScrollRef = React.useRef(null);
-  const appHeaderRef = React.useRef(null);
-  const [appHeaderHeight, setAppHeaderHeight] = useState(64);
-
-  // Medir la altura real del header (puede variar si envuelve en pantallas estrechas)
-  useEffect(() => {
-    const measure = () => { if (appHeaderRef.current) setAppHeaderHeight(appHeaderRef.current.offsetHeight); };
-    measure();
-    window.addEventListener('resize', measure);
-    return () => window.removeEventListener('resize', measure);
-  }, []);
   const [monitorClock, setMonitorClock] = useState(new Date());
   const [monitorTheme, setMonitorTheme] = useState('night'); // 'day' | 'night' — efectivo para esta pantalla
   const [monitorThemeDefault, setMonitorThemeDefault] = useState('night'); // preferencia global guardada por el admin
@@ -1207,7 +1197,7 @@ function App() {
           <div key={t.id} className="toast-anim" style={{background:'#1e293b',color:'white',padding:'10px 14px',borderRadius:'12px',fontSize:'11px',fontWeight:700,boxShadow:'0 10px 25px rgba(0,0,0,0.3)'}}>{t.msg}</div>
         ))}
       </div>
-      <header ref={appHeaderRef} style={{position:'sticky',top:0,zIndex:30,background:'white',borderBottom:'1px solid #94a3b8',boxShadow:'0 1px 3px rgba(0,0,0,0.1)'}}>
+      <header style={{position:'sticky',top:0,zIndex:30,background:'white',borderBottom:'1px solid #94a3b8',boxShadow:'0 1px 3px rgba(0,0,0,0.1)'}}>
         <div style={{maxWidth:'1800px',margin:'0 auto',padding:'10px 16px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:'16px',flexWrap:'wrap'}}>
           <div style={{display:'flex',alignItems:'center',gap:'16px',flexWrap:'wrap'}}>
             <div style={{display:'flex',alignItems:'center'}}>
@@ -1314,9 +1304,9 @@ function App() {
           <table style={{width:'100%',borderCollapse:'collapse',minWidth:'1000px',tableLayout:'fixed'}}>
             <thead>
               <tr style={{background:'#f1f5f9',borderBottom:'1px solid #94a3b8'}}>
-                <th style={{width:'144px',padding:'12px',textAlign:'left',fontSize:'11px',fontWeight:900,textTransform:'uppercase',color:'#475569',position:'sticky',left:0,top:appHeaderHeight,background:'#f1f5f9',zIndex:21,borderRight:'1px solid #94a3b8'}}>Equipo</th>
+                <th style={{width:'144px',padding:'12px',textAlign:'left',fontSize:'11px',fontWeight:900,textTransform:'uppercase',color:'#475569',position:'sticky',left:0,background:'#f1f5f9',zIndex:20,borderRight:'1px solid #94a3b8'}}>Equipo</th>
                 { (() => { const todayISO = formatDateISO(new Date()); return weekDates.map((date, idx) => { const isH = holidays.includes(formatDateISO(date)); return (
-                  <ThDay key={idx} date={date} idx={idx} isH={isH} todayISO={todayISO} tasks={tasks} techs={visibleTechs} stickyTop={appHeaderHeight} />
+                  <ThDay key={idx} date={date} idx={idx} isH={isH} todayISO={todayISO} tasks={tasks} techs={visibleTechs} />
                 ); }); })() }
               </tr>
             </thead>
