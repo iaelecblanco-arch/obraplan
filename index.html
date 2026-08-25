@@ -476,7 +476,16 @@ function App() {
   const [tempAssignedTechs, setTempAssignedTechs] = useState([]);
   const [clipboard, setClipboard] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
-  const [filterTechId, setFilterTechId] = useState("");
+  const [filterTechIds, setFilterTechIds] = useState([]);
+  const [showFilterDropdown, setShowFilterDropdown] = useState(false);
+  const filterDropdownRef = React.useRef(null);
+
+  useEffect(() => {
+    if (!showFilterDropdown) return;
+    const handleClickOutside = (e) => { if (filterDropdownRef.current && !filterDropdownRef.current.contains(e.target)) setShowFilterDropdown(false); };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showFilterDropdown]);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [bulkMoveTech, setBulkMoveTech] = useState("");
@@ -1229,7 +1238,8 @@ function App() {
   const changeWeek = (w) => { const n = new Date(currentMonday); n.setDate(currentMonday.getDate() + w*7); setCurrentMonday(n); };
   const toggleTechInTask = (id) => { if (tempAssignedTechs.includes(id)) { if (tempAssignedTechs.length > 1) setTempAssignedTechs(tempAssignedTechs.filter(x => x !== id)); } else setTempAssignedTechs([...tempAssignedTechs, id]); };
   const visibleTechs = useMemo(() => { if (!user) return []; return (isAdmin || isMonitor) ? techs : techs.filter(t => t.id === user.id); }, [user, techs, isAdmin, isMonitor]);
-  const displayedTechs = useMemo(() => filterTechId ? visibleTechs.filter(t => String(t.id) === String(filterTechId)) : visibleTechs, [visibleTechs, filterTechId]);
+  const displayedTechs = useMemo(() => filterTechIds.length > 0 ? visibleTechs.filter(t => filterTechIds.some(id => String(id) === String(t.id))) : visibleTechs, [visibleTechs, filterTechIds]);
+  const toggleFilterTech = (id) => { setFilterTechIds(prev => prev.some(x => String(x) === String(id)) ? prev.filter(x => String(x) !== String(id)) : [...prev, id]); };
 
   // CARGA
   if (loading) return (
@@ -1372,10 +1382,40 @@ function App() {
               <input type="text" placeholder="BUSCAR ID, CLIENTE O REF..." style={{paddingLeft:'32px',paddingRight:'16px',paddingTop:'0',paddingBottom:'0',height:'34px',background:'#f1f5f9',border:'1px solid #cbd5e1',borderRadius:'12px',fontSize:'11px',fontWeight:900,textTransform:'uppercase',outline:'none',width:'190px'}} value={searchTerm} onChange={e => setSearchTerm(e.target.value.toUpperCase())} />
             </div>
             {isAdmin && (
-              <select value={filterTechId} onChange={e => setFilterTechId(e.target.value)} style={{height:'34px',background:filterTechId?'#eff6ff':'#f1f5f9',border:filterTechId?'1px solid #93c5fd':'1px solid #cbd5e1',borderRadius:'12px',fontSize:'11px',fontWeight:900,textTransform:'uppercase',outline:'none',padding:'0 10px',color:filterTechId?'#2563eb':'#475569',cursor:'pointer'}}>
-                <option value="">TODOS LOS TÉCNICOS</option>
-                {techs.map(t => <option key={t.id} value={t.id}>{t.name} {t.surname}</option>)}
-              </select>
+              <div ref={filterDropdownRef} style={{position:'relative'}}>
+                <div onClick={() => setShowFilterDropdown(v => !v)} style={{height:'34px',minWidth:'150px',maxWidth:'260px',background:filterTechIds.length?'#eff6ff':'#f1f5f9',border:filterTechIds.length?'1px solid #93c5fd':'1px solid #cbd5e1',borderRadius:'12px',padding:'0 10px',display:'flex',alignItems:'center',gap:'6px',cursor:'pointer',overflow:'hidden'}}>
+                  <FilterIcon size={13} color={filterTechIds.length?'#2563eb':'#94a3b8'} />
+                  {filterTechIds.length === 0 ? (
+                    <span style={{fontSize:'11px',fontWeight:900,textTransform:'uppercase',color:'#475569',whiteSpace:'nowrap'}}>TODOS LOS TÉCNICOS</span>
+                  ) : (
+                    <div style={{display:'flex',gap:'4px',overflow:'hidden'}}>
+                      {filterTechIds.slice(0,2).map(id => {
+                        const tt = techs.find(x => String(x.id) === String(id));
+                        return <span key={id} style={{padding:'2px 6px',background:'#2563eb',color:'white',fontSize:'9px',fontWeight:900,borderRadius:'5px',whiteSpace:'nowrap',textTransform:'uppercase'}}>{tt?.name}</span>;
+                      })}
+                      {filterTechIds.length > 2 && <span style={{fontSize:'9px',fontWeight:900,color:'#2563eb'}}>+{filterTechIds.length - 2}</span>}
+                    </div>
+                  )}
+                </div>
+                {showFilterDropdown && (
+                  <div style={{position:'absolute',zIndex:40,marginTop:'4px',minWidth:'220px',background:'white',border:'1px solid #e2e8f0',borderRadius:'12px',boxShadow:'0 10px 25px rgba(0,0,0,0.15)',padding:'8px',maxHeight:'260px',overflowY:'auto'}}>
+                    {filterTechIds.length > 0 && (
+                      <div onClick={() => setFilterTechIds([])} style={{padding:'8px 10px',borderRadius:'8px',cursor:'pointer',fontSize:'11px',fontWeight:900,color:'#dc2626',textTransform:'uppercase',borderBottom:'1px solid #f1f5f9',marginBottom:'4px'}}>✕ Quitar filtro (ver todos)</div>
+                    )}
+                    {techs.map(t => {
+                      const checked = filterTechIds.some(id => String(id) === String(t.id));
+                      return (
+                        <div key={t.id} onClick={() => toggleFilterTech(t.id)} style={{padding:'8px 10px',borderRadius:'8px',cursor:'pointer',fontSize:'12px',fontWeight:700,display:'flex',alignItems:'center',gap:'8px',background:checked?'#eff6ff':'transparent',color:checked?'#1d4ed8':'#334155'}}>
+                          <div style={{width:'14px',height:'14px',borderRadius:'4px',border:`2px solid ${checked?'#2563eb':'#cbd5e1'}`,background:checked?'#2563eb':'white',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                            {checked && <CheckCircle2 size={9} color="white" />}
+                          </div>
+                          {t.name} {t.surname}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             )}
           </div>
           <div style={{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap'}}>
