@@ -915,16 +915,18 @@ function App() {
 
   const confirmBulkMove = async () => {
     if (!bulkMoveTech || !bulkMoveDate) { alert('Elige técnico y día de destino.'); return; }
-    if (tasks.some(x => x.techIds.includes(bulkMoveTech) && x.date === bulkMoveDate && x.isAbsence)) {
+    const targetTechId = techs.find(t => String(t.id) === String(bulkMoveTech))?.id;
+    if (targetTechId == null) { alert('Técnico no válido.'); return; }
+    if (tasks.some(x => x.techIds.includes(targetTechId) && x.date === bulkMoveDate && x.isAbsence)) {
       alert('Ese técnico tiene una ausencia ese día, no se puede mover ahí.');
       return;
     }
     const count = selectedIds.size;
     skipNextToastRef.current = true;
     const ids = Array.from(selectedIds);
-    setTasks(prev => prev.map(t => selectedIds.has(t.internalId) ? { ...t, techIds: [bulkMoveTech], date: bulkMoveDate } : t));
-    await Promise.all(ids.map(id => sb.from('tasks').update({ tech_ids: [bulkMoveTech], date: bulkMoveDate }).eq('internal_id', id)));
-    logAudit(sb, user, 'MOVER_SELECCION', `${count} tareas → técnico ${bulkMoveTech} (${bulkMoveDate})`);
+    setTasks(prev => prev.map(t => selectedIds.has(t.internalId) ? { ...t, techIds: [targetTechId], date: bulkMoveDate } : t));
+    await Promise.all(ids.map(id => sb.from('tasks').update({ tech_ids: [targetTechId], date: bulkMoveDate }).eq('internal_id', id)));
+    logAudit(sb, user, 'MOVER_SELECCION', `${count} tareas → técnico ${targetTechId} (${bulkMoveDate})`);
     pushToast(`✅ ${count} tarea(s) movida(s)`);
     setSelectedIds(new Set());
     setSelectionMode(false);
@@ -1227,7 +1229,7 @@ function App() {
   const changeWeek = (w) => { const n = new Date(currentMonday); n.setDate(currentMonday.getDate() + w*7); setCurrentMonday(n); };
   const toggleTechInTask = (id) => { if (tempAssignedTechs.includes(id)) { if (tempAssignedTechs.length > 1) setTempAssignedTechs(tempAssignedTechs.filter(x => x !== id)); } else setTempAssignedTechs([...tempAssignedTechs, id]); };
   const visibleTechs = useMemo(() => { if (!user) return []; return (isAdmin || isMonitor) ? techs : techs.filter(t => t.id === user.id); }, [user, techs, isAdmin, isMonitor]);
-  const displayedTechs = useMemo(() => filterTechId ? visibleTechs.filter(t => t.id === filterTechId) : visibleTechs, [visibleTechs, filterTechId]);
+  const displayedTechs = useMemo(() => filterTechId ? visibleTechs.filter(t => String(t.id) === String(filterTechId)) : visibleTechs, [visibleTechs, filterTechId]);
 
   // CARGA
   if (loading) return (
