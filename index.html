@@ -422,11 +422,12 @@ function TechRow({ t, columnLayout, holidays, tasks, isAdmin, techWeekClipboard,
       </td>
       {columnLayout.map((col, ci) => {
         if (col.kind === 'sep') {
-          const canPasteThisTech = isAdmin && techWeekClipboard?.techId === t.id;
+          const canPasteHere = isAdmin && !!techWeekClipboard;
+          const isSameTech = techWeekClipboard?.techId === t.id;
           return (
             <td key={`sep-${ci}`} style={{background:'#f8fafc',borderRight:'1px solid #cbd5e1',borderLeft:'1px solid #cbd5e1',verticalAlign:'middle',padding:'2px'}}>
-              {canPasteThisTech && (
-                <button onClick={() => onPasteTechWeekAt(t.id, col.afterIdx)} title="Pegar la semana copiada de este técnico aquí" style={{width:'100%',padding:'3px',background:'#16a34a',border:'none',borderRadius:'5px',cursor:'pointer',color:'white',display:'flex',alignItems:'center',justifyContent:'center'}}><ClipboardPaste size={10} color="white" /></button>
+              {canPasteHere && (
+                <button onClick={() => onPasteTechWeekAt(t.id, col.afterIdx)} title={isSameTech ? 'Pegar la semana copiada de este técnico aquí' : 'Pegar aquí la semana copiada de otro técnico'} style={{width:'100%',padding:'3px',background:isSameTech?'#16a34a':'#2563eb',border:'none',borderRadius:'5px',cursor:'pointer',color:'white',display:'flex',alignItems:'center',justifyContent:'center'}}><ClipboardPaste size={10} color="white" /></button>
               )}
             </td>
           );
@@ -1599,7 +1600,7 @@ function App() {
               </tr>
             </thead>
           </table>
-          <div className="table-body-scroll" style={{overflowY:'auto',overflowX:'hidden',borderRadius:'0 0 14px 14px'}}>
+          <div className="table-body-scroll" style={{overflowY:'auto',borderRadius:'0 0 14px 14px'}}>
             <table style={{width:isAdmin?adminTableWidth:'100%',borderCollapse:'collapse',minWidth:isAdmin?undefined:'1000px',tableLayout:'fixed'}}>
               <colgroup>
                 <col style={{width:'144px'}} />
