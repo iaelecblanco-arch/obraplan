@@ -398,7 +398,7 @@ function ThDay({ date, idx, isH, todayISO, tasks, techs, stickyTop, showWeekLabe
   );
 }
 
-function TechRow({ t, columnLayout, holidays, tasks, isAdmin, techWeekClipboard, clipboard, searchTerm, compact, dayClipboard, selectionMode, selectedIds, onNewTask, onPasteTask, onEditTask, onCopyTask, onDeleteTask, onToggleCompleted, onViewTask, onCopyTechWeek, onPasteTechWeek, onDuplicateNextWeek, onCopyDay, onPasteDay, onReorderDay, onToggleSelect }) {
+function TechRow({ t, columnLayout, holidays, tasks, isAdmin, techWeekClipboard, clipboard, searchTerm, compact, dayClipboard, selectionMode, selectedIds, onNewTask, onPasteTask, onEditTask, onCopyTask, onDeleteTask, onToggleCompleted, onViewTask, onCopyTechWeek, onPasteTechWeek, onPasteTechWeekAt, onDuplicateNextWeek, onCopyDay, onPasteDay, onReorderDay, onToggleSelect }) {
   const [hovering, setHovering] = useState(false);
   const shiftColor = t.shiftType==='INTENSIVA'?'#16a34a':'#2563eb';
   const shiftBg = t.shiftType==='INTENSIVA'?'#dcfce7':'#dbeafe';
@@ -421,7 +421,16 @@ function TechRow({ t, columnLayout, holidays, tasks, isAdmin, techWeekClipboard,
         </div>
       </td>
       {columnLayout.map((col, ci) => {
-        if (col.kind === 'sep') return <td key={`sep-${ci}`} style={{background:'#f8fafc',borderRight:'1px solid #cbd5e1',borderLeft:'1px solid #cbd5e1'}} />;
+        if (col.kind === 'sep') {
+          const canPasteThisTech = isAdmin && techWeekClipboard?.techId === t.id;
+          return (
+            <td key={`sep-${ci}`} style={{background:'#f8fafc',borderRight:'1px solid #cbd5e1',borderLeft:'1px solid #cbd5e1',verticalAlign:'middle',padding:'2px'}}>
+              {canPasteThisTech && (
+                <button onClick={() => onPasteTechWeekAt(t.id, col.afterIdx)} title="Pegar la semana copiada de este técnico aquí" style={{width:'100%',padding:'3px',background:'#16a34a',border:'none',borderRadius:'5px',cursor:'pointer',color:'white',display:'flex',alignItems:'center',justifyContent:'center'}}><ClipboardPaste size={10} color="white" /></button>
+              )}
+            </td>
+          );
+        }
         const date = col.date, idx = col.idx;
         const dISO = formatDateISO(date), isH = holidays.includes(dISO);
         const dayTasks = tasks.filter(tk => tk.techIds.includes(t.id) && tk.date === dISO);
@@ -831,9 +840,9 @@ function App() {
     setTechWeekClipboard({ techId, tasks: tasks.filter(t => t.techIds.includes(techId) && dates.includes(t.date) && !t.isAbsence), sourceMonday: formatDateISO(currentMonday) });
   };
 
-  const pasteTechWeek = async (targetTechId) => {
+  const pasteTechWeekAt = async (targetTechId, mondayDate) => {
     if (!techWeekClipboard) return;
-    const targetMondayStr = formatDateISO(currentMonday);
+    const targetMondayStr = formatDateISO(mondayDate);
     const sourceMondayStr = techWeekClipboard.sourceMonday;
     // Calcular offset en días entre las dos semanas
     const srcDate = new Date(sourceMondayStr + 'T12:00:00');
@@ -851,9 +860,15 @@ function App() {
       skipNextToastRef.current = true;
       const { error } = await sb.from('tasks').insert(newTasks.map(localTaskToDB));
       if (error) alert('Error al pegar: ' + error.message);
-      else logAudit(sb, user, 'PEGAR_SEMANA_TECNICO', `${newTasks.length} tareas`);
+      else logAudit(sb, user, 'PEGAR_SEMANA_TECNICO', `${newTasks.length} tareas (semana ${getWeekNumber(mondayDate)})`);
     }
     setTechWeekClipboard(null);
+  };
+  const pasteTechWeek = (targetTechId) => pasteTechWeekAt(targetTechId, currentMonday);
+  const pasteTechWeekAtSeparator = (targetTechId, afterIdx) => {
+    const nextMonday = new Date(currentMonday);
+    nextMonday.setDate(currentMonday.getDate() + 7 * (Math.floor(afterIdx / 5) + 1));
+    pasteTechWeekAt(targetTechId, nextMonday);
   };
 
   const copyDay = (techId, dateISO) => {
@@ -1551,7 +1566,7 @@ function App() {
           </div>
         )}
         {/* DESKTOP TABLE */}
-        <div className="desktop-table" style={{overflowX:'auto'}} ref={desktopTableRef}>
+        <div className="desktop-table" style={{overflowX:'auto',overflowY:'hidden'}} ref={desktopTableRef}>
         <div className="main-card" style={{maxWidth:isAdmin?'none':'1800px',margin:'0 auto',background:'white',borderRadius:'16px',border:'2px solid #94a3b8',boxShadow:'0 10px 25px rgba(0,0,0,0.1)',display:'flex',flexDirection:'column'}}>
           <table style={{width:isAdmin?adminTableWidth:'100%',borderCollapse:'collapse',minWidth:isAdmin?undefined:'1000px',tableLayout:'fixed',flexShrink:0}}>
             <colgroup>
@@ -1601,7 +1616,7 @@ function App() {
                     onNewTask={handleOpenNewTask} onPasteTask={handlePasteTask} onEditTask={handleEditTask}
                     onCopyTask={handleCopyTask} onDeleteTask={handleDeleteTask} onToggleCompleted={toggleTaskCompleted}
                     onViewTask={openTaskView}
-                    onCopyTechWeek={copyTechWeek} onPasteTechWeek={pasteTechWeek} onDuplicateNextWeek={duplicateTechToNextWeek}
+                    onCopyTechWeek={copyTechWeek} onPasteTechWeek={pasteTechWeek} onPasteTechWeekAt={pasteTechWeekAtSeparator} onDuplicateNextWeek={duplicateTechToNextWeek}
                     onCopyDay={copyDay} onPasteDay={pasteDay} onReorderDay={reorderDayTasks} onToggleSelect={toggleSelectTask} />
                 ))}
               </tbody>
