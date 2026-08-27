@@ -78,13 +78,14 @@
     .desktop-table { display: block !important; overflow: visible !important; flex: none !important; }
     .mobile-cards { display: none !important; }
     .main-card { border-radius: 0 !important; box-shadow: none !important; border: 1px solid #94a3b8 !important; width: 100% !important; max-width: 100% !important; overflow: visible !important; max-height: none !important; flex: none !important; display: block !important; }
-    table { min-width: 0 !important; width: 100% !important; table-layout: fixed !important; font-size: 9px !important; }
-    th, td { overflow: hidden !important; padding: 3px !important; }
-    .task-card { break-inside: avoid !important; page-break-inside: avoid !important; font-size: 9px !important; padding: 2px 4px !important; }
-    .task-card div { font-size: 9px !important; }
+    .no-print-extra-week { display: none !important; }
+    table { min-width: 0 !important; width: 100% !important; table-layout: fixed !important; font-size: 10.5px !important; }
+    th, td { overflow: hidden !important; padding: 6px !important; }
+    .task-card { break-inside: avoid !important; page-break-inside: avoid !important; font-size: 10.5px !important; padding: 5px 7px !important; }
+    .task-card div { font-size: 10.5px !important; }
     tr { break-inside: avoid !important; page-break-inside: avoid !important; }
     .animate-pulse { animation: none !important; }
-    div[style*="position:sticky"], td[style*="position:sticky"] { position: relative !important; }
+    div[style*="position:sticky"], td[style*="position:sticky"], th[style*="position:sticky"] { position: relative !important; }
   }
 </style>
 </head>
@@ -356,10 +357,10 @@ function TaskCard({ task, highlight, isAdmin, compact, draggable, selectionMode,
   );
 }
 
-function CellHover({ children, isH, isAdmin, clipboard, onNew, onPaste, canCopyDay, canPasteDay, onCopyDay, onPasteDay, selectionMode }) {
+function CellHover({ children, isH, isAdmin, clipboard, onNew, onPaste, canCopyDay, canPasteDay, onCopyDay, onPasteDay, selectionMode, className }) {
   const [hover, setHover] = useState(false);
   return (
-    <td onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+    <td className={className} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
       style={{padding:'4px',verticalAlign:'top',borderRight:'1px solid #94a3b8',background:isH?'#fef2f2':'white',overflow:'hidden'}}>
       <div style={{display:'flex',flexDirection:'column',gap:'4px'}}>
         {children}
@@ -376,14 +377,14 @@ function CellHover({ children, isH, isAdmin, clipboard, onNew, onPaste, canCopyD
   );
 }
 
-function ThDay({ date, idx, isH, todayISO, tasks, techs, stickyTop, showWeekLabel, weekBoundary }) {
+function ThDay({ date, idx, isH, todayISO, tasks, techs, stickyTop, showWeekLabel, weekBoundary, hideInPrint }) {
   const dISO = formatDateISO(date);
   const isToday = dISO === todayISO;
   const dayIdx = idx % 5;
   const techsWithoutTask = techs ? techs.filter(t => !tasks.some(tk => tk.techIds.includes(t.id) && tk.date === dISO)).length : 0;
   const bg = isH ? '#fecaca' : isToday ? '#eff6ff' : (stickyTop != null ? '#f1f5f9' : 'transparent');
   return (
-    <th style={{padding:'8px',textAlign:'center',borderRight:dayIdx<4?'1px solid #94a3b8':'none',borderLeft:weekBoundary?'3px solid #64748b':'none',background:bg,overflow:'hidden',...(stickyTop != null ? {position:'sticky',top:stickyTop,zIndex:20} : {})}}>
+    <th className={hideInPrint ? 'no-print-extra-week' : undefined} style={{padding:'8px',textAlign:'center',borderRight:dayIdx<4?'1px solid #94a3b8':'none',borderLeft:weekBoundary?'3px solid #64748b':'none',background:bg,overflow:'hidden',...(stickyTop != null ? {position:'sticky',top:stickyTop,zIndex:20} : {})}}>
       {showWeekLabel && <div style={{fontSize:'8px',fontWeight:900,color:'#64748b',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:'2px'}}>SEMANA {getWeekNumber(date)}</div>}
       <div style={{fontWeight:900,textTransform:'uppercase',color:isH?'#991b1b':isToday?'#2563eb':'#64748b',whiteSpace:'nowrap',fontSize:'11px',display:'flex',alignItems:'baseline',justifyContent:'center',gap:'4px'}}>
         <span>{DAYS_NAMES[dayIdx]}{isToday ? ' - HOY' : ''}</span>
@@ -421,7 +422,7 @@ function TechRow({ t, columnLayout, holidays, tasks, isAdmin, techWeekClipboard,
           const canPasteHere = isAdmin && !!techWeekClipboard;
           const isSameTech = techWeekClipboard?.techId === t.id;
           return (
-            <td key={`sep-${ci}`} style={{background:'#f8fafc',borderRight:'1px solid #cbd5e1',borderLeft:'1px solid #cbd5e1',verticalAlign:'middle',padding:'2px'}}>
+            <td key={`sep-${ci}`} className="no-print-extra-week" style={{background:'#f8fafc',borderRight:'1px solid #cbd5e1',borderLeft:'1px solid #cbd5e1',verticalAlign:'middle',padding:'2px'}}>
               {canPasteHere && (
                 <button onClick={() => onPasteTechWeekAt(t.id, col.afterIdx)} title={isSameTech ? 'Pegar la semana copiada de este técnico aquí' : 'Pegar aquí la semana copiada de otro técnico'} style={{width:'100%',padding:'3px',background:isSameTech?'#16a34a':'#2563eb',border:'none',borderRadius:'5px',cursor:'pointer',color:'white',display:'flex',alignItems:'center',justifyContent:'center'}}><ClipboardPaste size={10} color="white" /></button>
               )}
@@ -437,7 +438,7 @@ function TechRow({ t, columnLayout, holidays, tasks, isAdmin, techWeekClipboard,
         const canCopyDay = dayTasks.length > 0;
         const canPasteDay = dayClipboard && !(dayClipboard.techId === t.id && dayClipboard.dateISO === dISO) && !hasAbsence;
         return (
-          <CellHover key={idx} isH={isH} isAdmin={isAdmin} clipboard={clipboard}
+          <CellHover key={idx} isH={isH} isAdmin={isAdmin} clipboard={clipboard} className={idx >= 5 ? 'no-print-extra-week' : undefined}
             onNew={() => onNewTask(t.id, date)} onPaste={() => onPasteTask(t.id, dISO)}
             canCopyDay={canCopyDay} canPasteDay={canPasteDay}
             onCopyDay={() => onCopyDay(t.id, dISO)} onPasteDay={() => onPasteDay(t.id, dISO)} selectionMode={selectionMode}>
@@ -1569,8 +1570,8 @@ function App() {
             <colgroup>
               <col style={{width:'144px'}} />
               {columnLayout.map((col, ci) => col.kind === 'sep'
-                ? <col key={`sep-${ci}`} style={{width:`${SEP_WIDTH}px`}} />
-                : <col key={ci} style={isAdmin ? {width:DAY_COL_CSS_WIDTH} : undefined} />
+                ? <col key={`sep-${ci}`} className="no-print-extra-week" style={{width:`${SEP_WIDTH}px`}} />
+                : <col key={ci} className={col.idx >= 5 ? 'no-print-extra-week' : undefined} style={isAdmin ? {width:DAY_COL_CSS_WIDTH} : undefined} />
               )}
             </colgroup>
             <thead>
@@ -1580,7 +1581,7 @@ function App() {
                   if (col.kind === 'sep') {
                     const nextMonday = new Date(currentMonday); nextMonday.setDate(currentMonday.getDate() + 7 * (Math.floor(col.afterIdx / 5) + 1));
                     return (
-                      <th key={`sep-${ci}`} style={{width:`${SEP_WIDTH}px`,padding:'2px',background:'#f8fafc',borderRight:'1px solid #cbd5e1',borderLeft:'1px solid #cbd5e1',verticalAlign:'middle',position:'sticky',top:0,zIndex:20}}>
+                      <th key={`sep-${ci}`} className="no-print-extra-week" style={{width:`${SEP_WIDTH}px`,padding:'2px',background:'#f8fafc',borderRight:'1px solid #cbd5e1',borderLeft:'1px solid #cbd5e1',verticalAlign:'middle',position:'sticky',top:0,zIndex:20}}>
                         <div style={{display:'flex',flexDirection:'column',gap:'3px',alignItems:'center'}}>
                           <button onClick={() => copyWeekAt(new Date(nextMonday.getTime() - 7*86400000))} title="Copiar la semana anterior" style={{padding:'3px',background:'none',border:'1px solid #cbd5e1',borderRadius:'5px',cursor:'pointer',color:'#94a3b8',display:'flex'}}><CopyPlus size={10} /></button>
                           {fullQuadrantClipboard && <button onClick={() => pasteWeekAt(nextMonday)} title="Pegar en la semana siguiente" style={{padding:'3px',background:'#16a34a',border:'none',borderRadius:'5px',cursor:'pointer',color:'white',display:'flex'}}><ClipboardPaste size={10} color="white" /></button>}
@@ -1590,7 +1591,7 @@ function App() {
                   }
                   const isH = holidays.includes(formatDateISO(col.date)); const isWeekStart = col.idx % 5 === 0;
                   return (
-                    <ThDay key={col.idx} date={col.date} idx={col.idx} isH={isH} todayISO={todayISO} tasks={tasks} techs={visibleTechs} showWeekLabel={weekDates.length > 5 && isWeekStart} weekBoundary={weekDates.length > 5 && isWeekStart && col.idx > 0} stickyTop={0} />
+                    <ThDay key={col.idx} date={col.date} idx={col.idx} isH={isH} todayISO={todayISO} tasks={tasks} techs={visibleTechs} showWeekLabel={weekDates.length > 5 && isWeekStart} weekBoundary={weekDates.length > 5 && isWeekStart && col.idx > 0} stickyTop={0} hideInPrint={col.idx >= 5} />
                   );
                 }); })() }
               </tr>
