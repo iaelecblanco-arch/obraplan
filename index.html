@@ -380,15 +380,17 @@ function CellHover({ children, isH, isAdmin, clipboard, onNew, onPaste, canCopyD
   );
 }
 
-function ThDay({ date, idx, isH, todayISO, tasks, techs, stickyTop }) {
+function ThDay({ date, idx, isH, todayISO, tasks, techs, stickyTop, showWeekLabel, weekBoundary }) {
   const dISO = formatDateISO(date);
   const isToday = dISO === todayISO;
+  const dayIdx = idx % 5;
   const techsWithoutTask = techs ? techs.filter(t => !tasks.some(tk => tk.techIds.includes(t.id) && tk.date === dISO)).length : 0;
   const bg = isH ? '#fecaca' : isToday ? '#eff6ff' : (stickyTop != null ? '#f1f5f9' : 'transparent');
   return (
-    <th style={{padding:'8px',textAlign:'center',borderRight:idx<4?'1px solid #94a3b8':'none',background:bg,overflow:'hidden',...(stickyTop != null ? {position:'sticky',top:stickyTop,zIndex:20} : {})}}>
+    <th style={{padding:'8px',textAlign:'center',borderRight:dayIdx<4?'1px solid #94a3b8':'none',borderLeft:weekBoundary?'3px solid #64748b':'none',background:bg,overflow:'hidden',...(stickyTop != null ? {position:'sticky',top:stickyTop,zIndex:20} : {})}}>
+      {showWeekLabel && <div style={{fontSize:'8px',fontWeight:900,color:'#64748b',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:'2px'}}>SEMANA {getWeekNumber(date)}</div>}
       <div style={{fontWeight:900,textTransform:'uppercase',color:isH?'#991b1b':isToday?'#2563eb':'#64748b',whiteSpace:'nowrap',fontSize:'11px',display:'flex',alignItems:'baseline',justifyContent:'center',gap:'4px'}}>
-        <span>{DAYS_NAMES[idx]}{isToday ? ' - HOY' : ''}</span>
+        <span>{DAYS_NAMES[dayIdx]}{isToday ? ' - HOY' : ''}</span>
         <span style={{fontSize:'15px'}}>{date.getDate()}</span>
         {techsWithoutTask > 0 && <span style={{fontSize:'10px',fontWeight:900,color:'#dc2626'}}>({techsWithoutTask})</span>}
       </div>
@@ -713,7 +715,17 @@ function App() {
     setLoginError("Usuario o contraseña incorrectos");
   };
 
-  const weekDates = useMemo(() => Array.from({ length: 5 }, (_, i) => { const d = new Date(currentMonday); d.setDate(currentMonday.getDate() + i); return d; }), [currentMonday]);
+  const singleWeekDates = useMemo(() => Array.from({ length: 5 }, (_, i) => { const d = new Date(currentMonday); d.setDate(currentMonday.getDate() + i); return d; }), [currentMonday]);
+  // Vista extendida: los admins pueden desplazarse lateralmente hasta 3 semanas seguidas desde la semana seleccionada
+  const weekDates = useMemo(() => {
+    const totalDays = isAdmin ? 15 : 5;
+    return Array.from({ length: totalDays }, (_, i) => {
+      const weekOffset = Math.floor(i / 5), dayOffset = i % 5;
+      const d = new Date(currentMonday);
+      d.setDate(currentMonday.getDate() + weekOffset * 7 + dayOffset);
+      return d;
+    });
+  }, [currentMonday, isAdmin]);
   const weekNum = useMemo(() => getWeekNumber(currentMonday), [currentMonday]);
 
   const handleIdChange = (val) => {
@@ -813,7 +825,7 @@ function App() {
   };
 
   const copyTechWeek = (techId) => {
-    const dates = weekDates.map(d => formatDateISO(d));
+    const dates = singleWeekDates.map(d => formatDateISO(d));
     setTechWeekClipboard({ techId, tasks: tasks.filter(t => t.techIds.includes(techId) && dates.includes(t.date) && !t.isAbsence), sourceMonday: formatDateISO(currentMonday) });
   };
 
@@ -943,7 +955,7 @@ function App() {
   };
 
   const duplicateTechToNextWeek = async (techId) => {
-    const dates = weekDates.map(d => formatDateISO(d));
+    const dates = singleWeekDates.map(d => formatDateISO(d));
     const sourceTasks = tasks.filter(t => t.techIds.includes(techId) && dates.includes(t.date) && !t.isAbsence);
     if (sourceTasks.length === 0) { pushToast('⚠️ No hay tareas esta semana para duplicar'); return; }
     if (!window.confirm(`¿Duplicar ${sourceTasks.length} tarea(s) de este técnico a la semana siguiente?`)) return;
@@ -960,7 +972,7 @@ function App() {
   };
 
   const copyFullQuadrant = () => {
-    const dates = weekDates.map(d => formatDateISO(d));
+    const dates = singleWeekDates.map(d => formatDateISO(d));
     setFullQuadrantClipboard({ tasks: tasks.filter(t => dates.includes(t.date) && !t.isAbsence), sourceMonday: formatDateISO(currentMonday) });
   };
 
@@ -1046,7 +1058,7 @@ function App() {
 
 
   const exportToExcel = () => {
-    const dates = weekDates.map(d => formatDateISO(d));
+    const dates = singleWeekDates.map(d => formatDateISO(d));
     const rows = [];
     visibleTechs.forEach(t => {
       dates.forEach(dISO => {
@@ -1066,7 +1078,7 @@ function App() {
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, `Semana ${weekNum}`);
-    XLSX.writeFile(wb, `OBRAPLAN_Semana${weekNum}_${formatDateISO(weekDates[0])}.xlsx`);
+    XLSX.writeFile(wb, `OBRAPLAN_Semana${weekNum}_${formatDateISO(singleWeekDates[0])}.xlsx`);
     pushToast('📊 Excel exportado correctamente');
   };
 
@@ -1101,7 +1113,7 @@ function App() {
         pdf.addImage(imgData, 'PNG', margin, position, imgWidth, imgHeight);
         heightLeft -= (pageHeight - margin * 2);
       }
-      pdf.save(`OBRAPLAN_Semana${weekNum}_${formatDateISO(weekDates[0])}.pdf`);
+      pdf.save(`OBRAPLAN_Semana${weekNum}_${formatDateISO(singleWeekDates[0])}.pdf`);
       pushToast('✅ PDF descargado correctamente');
     } catch (e) {
       alert('No se pudo generar el PDF: ' + e.message);
@@ -1113,7 +1125,7 @@ function App() {
 
   const handleClearWeek = async () => {
     if (!window.confirm('¿Borrar TODAS las tareas de esta semana? Esta acción no se puede deshacer.')) return;
-    const dates = weekDates.map(d => formatDateISO(d));
+    const dates = singleWeekDates.map(d => formatDateISO(d));
     const toDelete = tasks.filter(t => dates.includes(t.date));
     for (const t of toDelete) {
       await sb.from('tasks').delete().eq('internal_id', t.internalId);
@@ -1238,6 +1250,13 @@ function App() {
   const changeWeek = (w) => { const n = new Date(currentMonday); n.setDate(currentMonday.getDate() + w*7); setCurrentMonday(n); };
   const toggleTechInTask = (id) => { if (tempAssignedTechs.includes(id)) { if (tempAssignedTechs.length > 1) setTempAssignedTechs(tempAssignedTechs.filter(x => x !== id)); } else setTempAssignedTechs([...tempAssignedTechs, id]); };
   const visibleTechs = useMemo(() => { if (!user) return []; return (isAdmin || isMonitor) ? techs : techs.filter(t => t.id === user.id); }, [user, techs, isAdmin, isMonitor]);
+  const tableMinWidth = Math.max(1000, 144 + weekDates.length * 140);
+  const desktopTableRef = React.useRef(null);
+
+  // Al cambiar de semana, el scroll lateral vuelve a empezar por la semana seleccionada
+  useEffect(() => {
+    if (desktopTableRef.current) desktopTableRef.current.scrollLeft = 0;
+  }, [currentMonday]);
   const displayedTechs = useMemo(() => filterTechIds.length > 0 ? visibleTechs.filter(t => filterTechIds.some(id => String(id) === String(t.id))) : visibleTechs, [visibleTechs, filterTechIds]);
   const toggleFilterTech = (id) => { setFilterTechIds(prev => prev.some(x => String(x) === String(id)) ? prev.filter(x => String(x) !== String(id)) : [...prev, id]); };
 
@@ -1373,10 +1392,15 @@ function App() {
               <button onClick={() => changeWeek(-1)} style={{padding:'4px',background:'none',border:'none',cursor:'pointer',borderRadius:'8px',display:'flex'}}><ChevronLeft size={16} /></button>
               <div style={{padding:'0 8px',display:'flex',alignItems:'center',gap:'6px',whiteSpace:'nowrap'}}>
                 <span style={{fontSize:'11px',fontWeight:900,color:'#2563eb',textTransform:'uppercase'}}>S{weekNum}</span>
-                <span style={{fontWeight:700,fontSize:'11px',color:'#475569',textTransform:'uppercase'}}>{weekDates[0]?.toLocaleDateString('es-ES',{day:'2-digit',month:'short'})} - {weekDates[4]?.toLocaleDateString('es-ES',{day:'2-digit',month:'short'})}</span>
+                <span style={{fontWeight:700,fontSize:'11px',color:'#475569',textTransform:'uppercase'}}>{singleWeekDates[0]?.toLocaleDateString('es-ES',{day:'2-digit',month:'short'})} - {singleWeekDates[4]?.toLocaleDateString('es-ES',{day:'2-digit',month:'short'})}</span>
               </div>
               <button onClick={() => changeWeek(1)} style={{padding:'4px',background:'none',border:'none',cursor:'pointer',borderRadius:'8px',display:'flex'}}><ChevronRight size={16} /></button>
             </div>
+            {isAdmin && (
+              <span className="no-print" style={{fontSize:'9px',fontWeight:700,color:'#94a3b8',display:'flex',alignItems:'center',gap:'3px',whiteSpace:'nowrap'}} title="Desplázate lateralmente en el cuadrante para ver las 2 semanas siguientes">
+                <ArrowRightCircle size={11} /> Desliza para ver +2 semanas
+              </span>
+            )}
             <div style={{position:'relative'}}>
               <span style={{position:'absolute',left:'10px',top:'9px',color:'#94a3b8'}}><Search size={14} /></span>
               <input type="text" placeholder="BUSCAR ID, CLIENTE O REF..." style={{paddingLeft:'32px',paddingRight:'16px',paddingTop:'0',paddingBottom:'0',height:'34px',background:'#f1f5f9',border:'1px solid #cbd5e1',borderRadius:'12px',fontSize:'11px',fontWeight:900,textTransform:'uppercase',outline:'none',width:'190px'}} value={searchTerm} onChange={e => setSearchTerm(e.target.value.toUpperCase())} />
@@ -1453,7 +1477,7 @@ function App() {
         {/* MOBILE VIEW - only for tech, shown on small screens */}
         {!isAdmin && (
           <div className="mobile-cards" style={{flexDirection:'column',gap:'12px',display:'none'}}>
-            {weekDates.map((date, dIdx) => {
+            {singleWeekDates.map((date, dIdx) => {
               const dISO = formatDateISO(date);
               const isH = holidays.includes(dISO);
               const dayTasks = tasks.filter(tk => tk.techIds.includes(user.id) && tk.date === dISO);
@@ -1503,21 +1527,21 @@ function App() {
           </div>
         )}
         {/* DESKTOP TABLE */}
-        <div className="desktop-table" style={{overflowX:'auto'}}>
+        <div className="desktop-table" style={{overflowX:'auto'}} ref={desktopTableRef}>
         <div className="main-card" style={{maxWidth:'1800px',margin:'0 auto',background:'white',borderRadius:'16px',border:'2px solid #94a3b8',boxShadow:'0 10px 25px rgba(0,0,0,0.1)',display:'flex',flexDirection:'column'}}>
-          <table style={{width:'100%',borderCollapse:'collapse',minWidth:'1000px',tableLayout:'fixed',flexShrink:0}}>
+          <table style={{width:'100%',borderCollapse:'collapse',minWidth:`${tableMinWidth}px`,tableLayout:'fixed',flexShrink:0}}>
             <colgroup><col style={{width:'144px'}} />{weekDates.map((_, i) => <col key={i} />)}</colgroup>
             <thead>
               <tr style={{background:'#f1f5f9',borderBottom:'1px solid #94a3b8'}}>
                 <th style={{width:'144px',padding:'12px',textAlign:'left',fontSize:'11px',fontWeight:900,textTransform:'uppercase',color:'#475569',position:'sticky',left:0,background:'#f1f5f9',zIndex:20,borderRight:'1px solid #94a3b8'}}>Equipo</th>
-                { (() => { const todayISO = formatDateISO(new Date()); return weekDates.map((date, idx) => { const isH = holidays.includes(formatDateISO(date)); return (
-                  <ThDay key={idx} date={date} idx={idx} isH={isH} todayISO={todayISO} tasks={tasks} techs={visibleTechs} />
+                { (() => { const todayISO = formatDateISO(new Date()); return weekDates.map((date, idx) => { const isH = holidays.includes(formatDateISO(date)); const isWeekStart = idx % 5 === 0; return (
+                  <ThDay key={idx} date={date} idx={idx} isH={isH} todayISO={todayISO} tasks={tasks} techs={visibleTechs} showWeekLabel={weekDates.length > 5 && isWeekStart} weekBoundary={weekDates.length > 5 && isWeekStart && idx > 0} />
                 ); }); })() }
               </tr>
             </thead>
           </table>
           <div className="table-body-scroll" style={{overflowY:'auto',borderRadius:'0 0 14px 14px'}}>
-            <table style={{width:'100%',borderCollapse:'collapse',minWidth:'1000px',tableLayout:'fixed'}}>
+            <table style={{width:'100%',borderCollapse:'collapse',minWidth:`${tableMinWidth}px`,tableLayout:'fixed'}}>
               <colgroup><col style={{width:'144px'}} />{weekDates.map((_, i) => <col key={i} />)}</colgroup>
               <tbody>
                 {displayedTechs.map(t => (
@@ -1852,7 +1876,7 @@ function App() {
               <label className="label-form">Día destino</label>
               <select className="input-form" value={bulkMoveDate} onChange={e => setBulkMoveDate(e.target.value)}>
                 <option value="">Selecciona...</option>
-                {weekDates.map((d, i) => { const iso = formatDateISO(d); return <option key={iso} value={iso}>{DAYS_NAMES[i]} {d.getDate()}</option>; })}
+                {singleWeekDates.map((d, i) => { const iso = formatDateISO(d); return <option key={iso} value={iso}>{DAYS_NAMES[i]} {d.getDate()}</option>; })}
               </select>
             </div>
             <button onClick={confirmBulkMove} style={{padding:'12px',background:'#2563eb',color:'white',border:'none',borderRadius:'12px',fontWeight:900,fontSize:'11px',textTransform:'uppercase',cursor:'pointer'}}>Mover</button>
@@ -1955,11 +1979,11 @@ function App() {
       { (() => {
         // Warning 1: techs with >3 tasks on same day
         const overloadWarnings = [];
-        weekDates.forEach(date => {
+        singleWeekDates.forEach(date => {
           const dISO = formatDateISO(date);
           visibleTechs.forEach(t => {
             const count = tasks.filter(tk => tk.techIds.includes(t.id) && tk.date === dISO && !tk.isAbsence).length;
-            if (count >= 3) overloadWarnings.push({ name: `${t.name} ${t.surname}`, day: DAYS_NAMES[weekDates.indexOf(date)], count });
+            if (count >= 3) overloadWarnings.push({ name: `${t.name} ${t.surname}`, day: DAYS_NAMES[singleWeekDates.indexOf(date)], count });
           });
         });
 
@@ -1967,7 +1991,7 @@ function App() {
 
         // Warning 3: techs with at least one day without any task or absence
         const pendingTechs = visibleTechs.filter(t => {
-          return weekDates.some(date => {
+          return singleWeekDates.some(date => {
             const dISO = formatDateISO(date);
             const dayNum = date.getDay();
             if (dayNum === 0 || dayNum === 6) return false;
