@@ -1258,25 +1258,9 @@ function App() {
   const visibleTechs = useMemo(() => { if (!user) return []; return (isAdmin || isMonitor) ? techs : techs.filter(t => t.id === user.id); }, [user, techs, isAdmin, isMonitor]);
   const desktopTableRef = React.useRef(null);
   const SEP_WIDTH = 34;
-  const [dayColWidth, setDayColWidth] = useState(190);
-
-  // Mide el ancho disponible para que, tanto de entrada como tras redimensionar,
-  // siempre se vean exactamente 5 días llenando la pantalla (columnas de ancho fijo).
-  useEffect(() => {
-    if (!isAdmin) return;
-    const numWeeks = Math.max(1, Math.round(weekDates.length / 5));
-    const numSeps = numWeeks - 1;
-    const measure = () => {
-      const el = desktopTableRef.current;
-      if (!el) return;
-      const containerWidth = el.clientWidth;
-      const w = Math.max(120, Math.floor((containerWidth - 144 - numSeps * SEP_WIDTH) / 5));
-      setDayColWidth(w);
-    };
-    measure();
-    window.addEventListener('resize', measure);
-    return () => window.removeEventListener('resize', measure);
-  }, [isAdmin, weekDates.length]);
+  // Fórmula CSS pura (sin medir con JS, más fiable): cada columna de día ocupa siempre
+  // 1/5 del ancho visible de la ventana, tanto si se ven 5 días como 15.
+  const DAY_COL_CSS_WIDTH = 'calc((100vw - 210px) / 5)';
 
   // Lista de columnas a renderizar, intercalando una columna separadora al final de cada semana (solo admin)
   const columnLayout = useMemo(() => {
@@ -1295,7 +1279,8 @@ function App() {
     if (desktopTableRef.current) desktopTableRef.current.scrollLeft = 0;
   }, [currentMonday]);
   const numSepColumns = columnLayout.filter(c => c.kind === 'sep').length;
-  const adminTableWidth = 144 + weekDates.length * dayColWidth + numSepColumns * SEP_WIDTH;
+  // Ancho total de la tabla = suma exacta de todas sus columnas (misma fórmula, sin JS)
+  const adminTableWidth = `calc(144px + ${numSepColumns} * ${SEP_WIDTH}px + ${weekDates.length} * ((100vw - 210px) / 5))`;
   const displayedTechs = useMemo(() => filterTechIds.length > 0 ? visibleTechs.filter(t => filterTechIds.some(id => String(id) === String(t.id))) : visibleTechs, [visibleTechs, filterTechIds]);
   const toggleFilterTech = (id) => { setFilterTechIds(prev => prev.some(x => String(x) === String(id)) ? prev.filter(x => String(x) !== String(id)) : [...prev, id]); };
 
@@ -1568,12 +1553,12 @@ function App() {
         {/* DESKTOP TABLE */}
         <div className="desktop-table" style={{overflowX:'auto'}} ref={desktopTableRef}>
         <div className="main-card" style={{maxWidth:'1800px',margin:'0 auto',background:'white',borderRadius:'16px',border:'2px solid #94a3b8',boxShadow:'0 10px 25px rgba(0,0,0,0.1)',display:'flex',flexDirection:'column'}}>
-          <table style={{width:isAdmin?`${adminTableWidth}px`:'100%',borderCollapse:'collapse',minWidth:isAdmin?undefined:'1000px',tableLayout:'fixed',flexShrink:0}}>
+          <table style={{width:isAdmin?adminTableWidth:'100%',borderCollapse:'collapse',minWidth:isAdmin?undefined:'1000px',tableLayout:'fixed',flexShrink:0}}>
             <colgroup>
               <col style={{width:'144px'}} />
               {columnLayout.map((col, ci) => col.kind === 'sep'
                 ? <col key={`sep-${ci}`} style={{width:`${SEP_WIDTH}px`}} />
-                : <col key={ci} style={isAdmin ? {width:`${dayColWidth}px`} : undefined} />
+                : <col key={ci} style={isAdmin ? {width:DAY_COL_CSS_WIDTH} : undefined} />
               )}
             </colgroup>
             <thead>
@@ -1600,12 +1585,12 @@ function App() {
             </thead>
           </table>
           <div className="table-body-scroll" style={{overflowY:'auto',borderRadius:'0 0 14px 14px'}}>
-            <table style={{width:isAdmin?`${adminTableWidth}px`:'100%',borderCollapse:'collapse',minWidth:isAdmin?undefined:'1000px',tableLayout:'fixed'}}>
+            <table style={{width:isAdmin?adminTableWidth:'100%',borderCollapse:'collapse',minWidth:isAdmin?undefined:'1000px',tableLayout:'fixed'}}>
               <colgroup>
                 <col style={{width:'144px'}} />
                 {columnLayout.map((col, ci) => col.kind === 'sep'
                   ? <col key={`sep-${ci}`} style={{width:`${SEP_WIDTH}px`}} />
-                  : <col key={ci} style={isAdmin ? {width:`${dayColWidth}px`} : undefined} />
+                  : <col key={ci} style={isAdmin ? {width:DAY_COL_CSS_WIDTH} : undefined} />
                 )}
               </colgroup>
               <tbody>
