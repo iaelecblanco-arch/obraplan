@@ -1552,7 +1552,7 @@ function App() {
         )}
         {/* DESKTOP TABLE */}
         <div className="desktop-table" style={{overflowX:'auto'}} ref={desktopTableRef}>
-        <div className="main-card" style={{maxWidth:'1800px',margin:'0 auto',background:'white',borderRadius:'16px',border:'2px solid #94a3b8',boxShadow:'0 10px 25px rgba(0,0,0,0.1)',display:'flex',flexDirection:'column'}}>
+        <div className="main-card" style={{maxWidth:isAdmin?'none':'1800px',margin:'0 auto',background:'white',borderRadius:'16px',border:'2px solid #94a3b8',boxShadow:'0 10px 25px rgba(0,0,0,0.1)',display:'flex',flexDirection:'column'}}>
           <table style={{width:isAdmin?adminTableWidth:'100%',borderCollapse:'collapse',minWidth:isAdmin?undefined:'1000px',tableLayout:'fixed',flexShrink:0}}>
             <colgroup>
               <col style={{width:'144px'}} />
