@@ -37,9 +37,8 @@
     html, body { height: 100%; overflow: hidden; margin: 0; }
     .app-shell { height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
     .app-main { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
-    .desktop-table { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+    .desktop-table { flex: 1; min-height: 0; }
     .main-card { flex: 1; min-height: 0; }
-    .table-body-scroll { flex: 1; min-height: 0; }
   }
   @keyframes slideIn { from{opacity:0;transform:translateY(-10px)} to{opacity:1;transform:translateY(0)} }
   .toast-anim { animation: slideIn 0.25s ease; }
@@ -68,8 +67,6 @@
   body.dark-mode .label-form { color:#94a3b8 !important; }
   .monitor-scroll { scrollbar-width: none; -ms-overflow-style: none; }
   .monitor-scroll::-webkit-scrollbar { display: none; width: 0; height: 0; }
-  .table-body-scroll { scrollbar-width: none; -ms-overflow-style: none; }
-  .table-body-scroll::-webkit-scrollbar { display: none; width: 0; height: 0; }
   @media print {
     @page { size: A4 landscape; margin: 5mm; }
     * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
@@ -81,7 +78,6 @@
     .desktop-table { display: block !important; overflow: visible !important; flex: none !important; }
     .mobile-cards { display: none !important; }
     .main-card { border-radius: 0 !important; box-shadow: none !important; border: 1px solid #94a3b8 !important; width: 100% !important; max-width: 100% !important; overflow: visible !important; max-height: none !important; flex: none !important; display: block !important; }
-    .table-body-scroll { overflow: visible !important; max-height: none !important; flex: none !important; }
     table { min-width: 0 !important; width: 100% !important; table-layout: fixed !important; font-size: 9px !important; }
     th, td { overflow: hidden !important; padding: 3px !important; }
     .task-card { break-inside: avoid !important; page-break-inside: avoid !important; font-size: 9px !important; padding: 2px 4px !important; }
@@ -1108,7 +1104,7 @@ function App() {
 
   const exportToPDF = async () => {
     const cardEl = document.querySelector('.main-card');
-    const scrollDiv = cardEl?.querySelector('.table-body-scroll');
+    const scrollDiv = document.querySelector('.desktop-table');
     if (!cardEl || !scrollDiv) return;
     setPdfGenerating(true);
     pushToast('📄 Generando PDF...');
@@ -1567,9 +1563,9 @@ function App() {
           </div>
         )}
         {/* DESKTOP TABLE */}
-        <div className="desktop-table" style={{overflowX:'auto',overflowY:'hidden'}} ref={desktopTableRef}>
-        <div className="main-card" style={{maxWidth:isAdmin?'none':'1800px',margin:'0 auto',background:'white',borderRadius:'16px',border:'2px solid #94a3b8',boxShadow:'0 10px 25px rgba(0,0,0,0.1)',display:'flex',flexDirection:'column'}}>
-          <table style={{width:isAdmin?adminTableWidth:'100%',borderCollapse:'collapse',minWidth:isAdmin?undefined:'1000px',tableLayout:'fixed',flexShrink:0}}>
+        <div className="desktop-table" style={{overflow:'auto'}} ref={desktopTableRef}>
+        <div className="main-card" style={{maxWidth:isAdmin?'none':'1800px',margin:'0 auto',background:'white',borderRadius:'16px',border:'2px solid #94a3b8',boxShadow:'0 10px 25px rgba(0,0,0,0.1)'}}>
+          <table style={{width:isAdmin?adminTableWidth:'100%',borderCollapse:'collapse',minWidth:isAdmin?undefined:'1000px',tableLayout:'fixed'}}>
             <colgroup>
               <col style={{width:'144px'}} />
               {columnLayout.map((col, ci) => col.kind === 'sep'
@@ -1579,12 +1575,12 @@ function App() {
             </colgroup>
             <thead>
               <tr style={{background:'#f1f5f9',borderBottom:'1px solid #94a3b8'}}>
-                <th style={{width:'144px',padding:'12px',textAlign:'left',fontSize:'11px',fontWeight:900,textTransform:'uppercase',color:'#475569',position:'sticky',left:0,background:'#f1f5f9',zIndex:20,borderRight:'1px solid #94a3b8'}}>Equipo</th>
+                <th style={{width:'144px',padding:'12px',textAlign:'left',fontSize:'11px',fontWeight:900,textTransform:'uppercase',color:'#475569',position:'sticky',left:0,top:0,background:'#f1f5f9',zIndex:25,borderRight:'1px solid #94a3b8'}}>Equipo</th>
                 { (() => { const todayISO = formatDateISO(new Date()); return columnLayout.map((col, ci) => {
                   if (col.kind === 'sep') {
                     const nextMonday = new Date(currentMonday); nextMonday.setDate(currentMonday.getDate() + 7 * (Math.floor(col.afterIdx / 5) + 1));
                     return (
-                      <th key={`sep-${ci}`} style={{width:`${SEP_WIDTH}px`,padding:'2px',background:'#f8fafc',borderRight:'1px solid #cbd5e1',borderLeft:'1px solid #cbd5e1',verticalAlign:'middle'}}>
+                      <th key={`sep-${ci}`} style={{width:`${SEP_WIDTH}px`,padding:'2px',background:'#f8fafc',borderRight:'1px solid #cbd5e1',borderLeft:'1px solid #cbd5e1',verticalAlign:'middle',position:'sticky',top:0,zIndex:20}}>
                         <div style={{display:'flex',flexDirection:'column',gap:'3px',alignItems:'center'}}>
                           <button onClick={() => copyWeekAt(new Date(nextMonday.getTime() - 7*86400000))} title="Copiar la semana anterior" style={{padding:'3px',background:'none',border:'1px solid #cbd5e1',borderRadius:'5px',cursor:'pointer',color:'#94a3b8',display:'flex'}}><CopyPlus size={10} /></button>
                           {fullQuadrantClipboard && <button onClick={() => pasteWeekAt(nextMonday)} title="Pegar en la semana siguiente" style={{padding:'3px',background:'#16a34a',border:'none',borderRadius:'5px',cursor:'pointer',color:'white',display:'flex'}}><ClipboardPaste size={10} color="white" /></button>}
@@ -1594,35 +1590,24 @@ function App() {
                   }
                   const isH = holidays.includes(formatDateISO(col.date)); const isWeekStart = col.idx % 5 === 0;
                   return (
-                    <ThDay key={col.idx} date={col.date} idx={col.idx} isH={isH} todayISO={todayISO} tasks={tasks} techs={visibleTechs} showWeekLabel={weekDates.length > 5 && isWeekStart} weekBoundary={weekDates.length > 5 && isWeekStart && col.idx > 0} />
+                    <ThDay key={col.idx} date={col.date} idx={col.idx} isH={isH} todayISO={todayISO} tasks={tasks} techs={visibleTechs} showWeekLabel={weekDates.length > 5 && isWeekStart} weekBoundary={weekDates.length > 5 && isWeekStart && col.idx > 0} stickyTop={0} />
                   );
                 }); })() }
               </tr>
             </thead>
+            <tbody>
+              {displayedTechs.map(t => (
+                <TechRow key={t.id} t={t} columnLayout={columnLayout} holidays={holidays} tasks={tasks} isAdmin={isAdmin}
+                  techWeekClipboard={techWeekClipboard} clipboard={clipboard} searchTerm={searchTerm} dayClipboard={dayClipboard}
+                  selectionMode={selectionMode} selectedIds={selectedIds}
+                  onNewTask={handleOpenNewTask} onPasteTask={handlePasteTask} onEditTask={handleEditTask}
+                  onCopyTask={handleCopyTask} onDeleteTask={handleDeleteTask} onToggleCompleted={toggleTaskCompleted}
+                  onViewTask={openTaskView}
+                  onCopyTechWeek={copyTechWeek} onPasteTechWeek={pasteTechWeek} onPasteTechWeekAt={pasteTechWeekAtSeparator} onDuplicateNextWeek={duplicateTechToNextWeek}
+                  onCopyDay={copyDay} onPasteDay={pasteDay} onReorderDay={reorderDayTasks} onToggleSelect={toggleSelectTask} />
+              ))}
+            </tbody>
           </table>
-          <div className="table-body-scroll" style={{overflowY:'auto',borderRadius:'0 0 14px 14px'}}>
-            <table style={{width:isAdmin?adminTableWidth:'100%',borderCollapse:'collapse',minWidth:isAdmin?undefined:'1000px',tableLayout:'fixed'}}>
-              <colgroup>
-                <col style={{width:'144px'}} />
-                {columnLayout.map((col, ci) => col.kind === 'sep'
-                  ? <col key={`sep-${ci}`} style={{width:`${SEP_WIDTH}px`}} />
-                  : <col key={ci} style={isAdmin ? {width:DAY_COL_CSS_WIDTH} : undefined} />
-                )}
-              </colgroup>
-              <tbody>
-                {displayedTechs.map(t => (
-                  <TechRow key={t.id} t={t} columnLayout={columnLayout} holidays={holidays} tasks={tasks} isAdmin={isAdmin}
-                    techWeekClipboard={techWeekClipboard} clipboard={clipboard} searchTerm={searchTerm} dayClipboard={dayClipboard}
-                    selectionMode={selectionMode} selectedIds={selectedIds}
-                    onNewTask={handleOpenNewTask} onPasteTask={handlePasteTask} onEditTask={handleEditTask}
-                    onCopyTask={handleCopyTask} onDeleteTask={handleDeleteTask} onToggleCompleted={toggleTaskCompleted}
-                    onViewTask={openTaskView}
-                    onCopyTechWeek={copyTechWeek} onPasteTechWeek={pasteTechWeek} onPasteTechWeekAt={pasteTechWeekAtSeparator} onDuplicateNextWeek={duplicateTechToNextWeek}
-                    onCopyDay={copyDay} onPasteDay={pasteDay} onReorderDay={reorderDayTasks} onToggleSelect={toggleSelectTask} />
-                ))}
-              </tbody>
-            </table>
-          </div>
         </div>
         </div>
       </main>
