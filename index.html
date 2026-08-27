@@ -718,7 +718,16 @@ function App() {
   };
 
   const singleWeekDates = useMemo(() => Array.from({ length: 5 }, (_, i) => { const d = new Date(currentMonday); d.setDate(currentMonday.getDate() + i); return d; }), [currentMonday]);
-  const weekDates = singleWeekDates;
+  // Vista extendida: los admins pueden desplazarse lateralmente para ver 1 semana más (2 en total)
+  const weekDates = useMemo(() => {
+    const totalDays = isAdmin ? 10 : 5;
+    return Array.from({ length: totalDays }, (_, i) => {
+      const weekOffset = Math.floor(i / 5), dayOffset = i % 5;
+      const d = new Date(currentMonday);
+      d.setDate(currentMonday.getDate() + weekOffset * 7 + dayOffset);
+      return d;
+    });
+  }, [currentMonday, isAdmin]);
   const weekNum = useMemo(() => getWeekNumber(currentMonday), [currentMonday]);
 
   const handleIdChange = (val) => {
@@ -1251,8 +1260,27 @@ function App() {
 
   // Columnas a renderizar (de momento siempre una sola semana; columnLayout queda preparado
   // para una futura vista de varias semanas sin separadores por ahora)
-  const columnLayout = useMemo(() => weekDates.map((date, idx) => ({ kind: 'day', date, idx })), [weekDates]);
+  const SEP_WIDTH = 34;
+  // Fórmula CSS pura (sin medir con JS): cada columna de día ocupa siempre 1/5 del ancho
+  // visible de la ventana, tanto si se ve 1 semana como 2 — así el ancho no cambia.
+  const DAY_COL_CSS_WIDTH = 'calc((100vw - 210px) / 5)';
 
+  const columnLayout = useMemo(() => {
+    const cols = [];
+    weekDates.forEach((date, idx) => {
+      cols.push({ kind: 'day', date, idx });
+      const isEndOfBlock = (idx + 1) % 5 === 0;
+      const isLast = idx === weekDates.length - 1;
+      if (isAdmin && isEndOfBlock && !isLast) cols.push({ kind: 'sep', afterIdx: idx });
+    });
+    return cols;
+  }, [weekDates, isAdmin]);
+  const numSepColumns = columnLayout.filter(c => c.kind === 'sep').length;
+  const adminTableWidth = `calc(144px + ${numSepColumns} * ${SEP_WIDTH}px + ${weekDates.length} * ((100vw - 210px) / 5))`;
+
+  useEffect(() => {
+    if (desktopTableRef.current) desktopTableRef.current.scrollLeft = 0;
+  }, [currentMonday]);
   const displayedTechs = useMemo(() => filterTechIds.length > 0 ? visibleTechs.filter(t => filterTechIds.some(id => String(id) === String(t.id))) : visibleTechs, [visibleTechs, filterTechIds]);
   const toggleFilterTech = (id) => { setFilterTechIds(prev => prev.some(x => String(x) === String(id)) ? prev.filter(x => String(x) !== String(id)) : [...prev, id]); };
 
@@ -1392,6 +1420,11 @@ function App() {
               </div>
               <button onClick={() => changeWeek(1)} style={{padding:'4px',background:'none',border:'none',cursor:'pointer',borderRadius:'8px',display:'flex'}}><ChevronRight size={16} /></button>
             </div>
+            {isAdmin && (
+              <span className="no-print" style={{fontSize:'9px',fontWeight:700,color:'#94a3b8',display:'flex',alignItems:'center',gap:'3px',whiteSpace:'nowrap'}} title="Desplázate lateralmente en el cuadrante para ver la semana siguiente">
+                <ArrowRightCircle size={11} /> Desliza para ver +1 semana
+              </span>
+            )}
             <div style={{position:'relative'}}>
               <span style={{position:'absolute',left:'10px',top:'9px',color:'#94a3b8'}}><Search size={14} /></span>
               <input type="text" placeholder="BUSCAR ID, CLIENTE O REF..." style={{paddingLeft:'32px',paddingRight:'16px',paddingTop:'0',paddingBottom:'0',height:'34px',background:'#f1f5f9',border:'1px solid #cbd5e1',borderRadius:'12px',fontSize:'11px',fontWeight:900,textTransform:'uppercase',outline:'none',width:'190px'}} value={searchTerm} onChange={e => setSearchTerm(e.target.value.toUpperCase())} />
@@ -1520,20 +1553,46 @@ function App() {
         {/* DESKTOP TABLE */}
         <div className="desktop-table" style={{overflowX:'auto'}} ref={desktopTableRef}>
         <div className="main-card" style={{maxWidth:'1800px',margin:'0 auto',background:'white',borderRadius:'16px',border:'2px solid #94a3b8',boxShadow:'0 10px 25px rgba(0,0,0,0.1)',display:'flex',flexDirection:'column'}}>
-          <table style={{width:'100%',borderCollapse:'collapse',minWidth:'1000px',tableLayout:'fixed',flexShrink:0}}>
-            <colgroup><col style={{width:'144px'}} />{weekDates.map((_, i) => <col key={i} />)}</colgroup>
+          <table style={{width:isAdmin?adminTableWidth:'100%',borderCollapse:'collapse',minWidth:isAdmin?undefined:'1000px',tableLayout:'fixed',flexShrink:0}}>
+            <colgroup>
+              <col style={{width:'144px'}} />
+              {columnLayout.map((col, ci) => col.kind === 'sep'
+                ? <col key={`sep-${ci}`} style={{width:`${SEP_WIDTH}px`}} />
+                : <col key={ci} style={isAdmin ? {width:DAY_COL_CSS_WIDTH} : undefined} />
+              )}
+            </colgroup>
             <thead>
               <tr style={{background:'#f1f5f9',borderBottom:'1px solid #94a3b8'}}>
                 <th style={{width:'144px',padding:'12px',textAlign:'left',fontSize:'11px',fontWeight:900,textTransform:'uppercase',color:'#475569',position:'sticky',left:0,background:'#f1f5f9',zIndex:20,borderRight:'1px solid #94a3b8'}}>Equipo</th>
-                { (() => { const todayISO = formatDateISO(new Date()); return weekDates.map((date, idx) => { const isH = holidays.includes(formatDateISO(date)); return (
-                  <ThDay key={idx} date={date} idx={idx} isH={isH} todayISO={todayISO} tasks={tasks} techs={visibleTechs} />
-                ); }); })() }
+                { (() => { const todayISO = formatDateISO(new Date()); return columnLayout.map((col, ci) => {
+                  if (col.kind === 'sep') {
+                    const nextMonday = new Date(currentMonday); nextMonday.setDate(currentMonday.getDate() + 7 * (Math.floor(col.afterIdx / 5) + 1));
+                    return (
+                      <th key={`sep-${ci}`} style={{width:`${SEP_WIDTH}px`,padding:'2px',background:'#f8fafc',borderRight:'1px solid #cbd5e1',borderLeft:'1px solid #cbd5e1',verticalAlign:'middle'}}>
+                        <div style={{display:'flex',flexDirection:'column',gap:'3px',alignItems:'center'}}>
+                          <button onClick={() => copyWeekAt(new Date(nextMonday.getTime() - 7*86400000))} title="Copiar la semana anterior" style={{padding:'3px',background:'none',border:'1px solid #cbd5e1',borderRadius:'5px',cursor:'pointer',color:'#94a3b8',display:'flex'}}><CopyPlus size={10} /></button>
+                          {fullQuadrantClipboard && <button onClick={() => pasteWeekAt(nextMonday)} title="Pegar en la semana siguiente" style={{padding:'3px',background:'#16a34a',border:'none',borderRadius:'5px',cursor:'pointer',color:'white',display:'flex'}}><ClipboardPaste size={10} color="white" /></button>}
+                        </div>
+                      </th>
+                    );
+                  }
+                  const isH = holidays.includes(formatDateISO(col.date)); const isWeekStart = col.idx % 5 === 0;
+                  return (
+                    <ThDay key={col.idx} date={col.date} idx={col.idx} isH={isH} todayISO={todayISO} tasks={tasks} techs={visibleTechs} showWeekLabel={weekDates.length > 5 && isWeekStart} weekBoundary={weekDates.length > 5 && isWeekStart && col.idx > 0} />
+                  );
+                }); })() }
               </tr>
             </thead>
           </table>
-          <div className="table-body-scroll" style={{overflowY:'auto',borderRadius:'0 0 14px 14px'}}>
-            <table style={{width:'100%',borderCollapse:'collapse',minWidth:'1000px',tableLayout:'fixed'}}>
-              <colgroup><col style={{width:'144px'}} />{weekDates.map((_, i) => <col key={i} />)}</colgroup>
+          <div className="table-body-scroll" style={{overflowY:'auto',overflowX:'hidden',borderRadius:'0 0 14px 14px'}}>
+            <table style={{width:isAdmin?adminTableWidth:'100%',borderCollapse:'collapse',minWidth:isAdmin?undefined:'1000px',tableLayout:'fixed'}}>
+              <colgroup>
+                <col style={{width:'144px'}} />
+                {columnLayout.map((col, ci) => col.kind === 'sep'
+                  ? <col key={`sep-${ci}`} style={{width:`${SEP_WIDTH}px`}} />
+                  : <col key={ci} style={isAdmin ? {width:DAY_COL_CSS_WIDTH} : undefined} />
+                )}
+              </colgroup>
               <tbody>
                 {displayedTechs.map(t => (
                   <TechRow key={t.id} t={t} columnLayout={columnLayout} holidays={holidays} tasks={tasks} isAdmin={isAdmin}
