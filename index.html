@@ -2110,19 +2110,7 @@ function App() {
 
       {/* ─── FOOTER WARNINGS ─── */}
       { (() => {
-        // Warning 1: techs with >3 tasks on same day
-        const overloadWarnings = [];
-        singleWeekDates.forEach(date => {
-          const dISO = formatDateISO(date);
-          visibleTechs.forEach(t => {
-            const count = tasks.filter(tk => tk.techIds.includes(t.id) && tk.date === dISO && !tk.isAbsence).length;
-            if (count >= 3) overloadWarnings.push({ name: `${t.name} ${t.surname}`, day: DAYS_NAMES[singleWeekDates.indexOf(date)], count });
-          });
-        });
-
-        // Warning 2: removed (shift mismatch)
-
-        // Warning 3: techs with at least one day without any task or absence
+        // Warning: techs with at least one day without any task or absence
         const pendingTechs = visibleTechs.filter(t => {
           return singleWeekDates.some(date => {
             const dISO = formatDateISO(date);
@@ -2133,23 +2121,13 @@ function App() {
           });
         });
 
-        const hasWarnings = overloadWarnings.length > 0 || pendingTechs.length > 0;
-        if (!hasWarnings) return null;
+        if (pendingTechs.length === 0) return null;
         return (
           <div className="no-print" style={{maxWidth:'1800px',margin:'12px auto 0',display:'flex',flexDirection:'column',gap:'6px',padding:'0 16px 16px'}}>
-            {overloadWarnings.map((w, i) => (
-              <div key={i} style={{display:'flex',alignItems:'center',gap:'10px',padding:'8px 14px',background:'#fff7ed',border:'1px solid #fed7aa',borderRadius:'10px',fontSize:'11px',fontWeight:700,color:'#c2410c'}}>
-                <span style={{fontSize:'16px'}}>⚠️</span>
-                <span><strong>{w.name}</strong> tiene <strong>{w.count} tareas</strong> el <strong>{w.day}</strong> — más de 3 tareas en un día</span>
-              </div>
-            ))}
-
-            {pendingTechs.length > 0 && (
-              <div style={{display:'flex',alignItems:'center',gap:'10px',padding:'8px 14px',background:'#fef2f2',border:'1px solid #fecaca',borderRadius:'10px',fontSize:'11px',fontWeight:700,color:'#dc2626'}}>
-                <span style={{fontSize:'16px'}}>⚠️</span>
-                <span><strong>{pendingTechs.length} técnico{pendingTechs.length > 1 ? 's' : ''}</strong> con días sin tarea asignada esta semana: <strong>{pendingTechs.map(t => t.name).join(', ')}</strong></span>
-              </div>
-            )}
+            <div style={{display:'flex',alignItems:'center',gap:'10px',padding:'8px 14px',background:'#fef2f2',border:'1px solid #fecaca',borderRadius:'10px',fontSize:'11px',fontWeight:700,color:'#dc2626'}}>
+              <span style={{fontSize:'16px'}}>⚠️</span>
+              <span><strong>{pendingTechs.length} técnico{pendingTechs.length > 1 ? 's' : ''}</strong> con días sin tarea asignada esta semana: <strong>{pendingTechs.map(t => t.name).join(', ')}</strong></span>
+            </div>
           </div>
         );
       })() }
