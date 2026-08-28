@@ -349,7 +349,7 @@ function TaskCard({ task, highlight, isAdmin, compact, draggable, selectionMode,
       <div style={{width:'100%'}}>
         <div style={{fontWeight:900,color:textColor||'#1e293b',textTransform:'uppercase',fontSize:compact?'11px':'12px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',paddingRight: hover ? '52px' : '0'}}>{task.isAbsence ? task.id : `${isJustifiedAbsence ? 'AUSENCIA' : task.id} - ${task.customer}`}</div>
         {!task.isAbsence && <div style={{fontSize:compact?'10px':'11px',fontWeight:700,color:textColor||'#475569',textTransform:'uppercase',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',lineHeight:1,paddingRight: hover ? '52px' : '0'}}>{task.reference}</div>}
-        {!isAdmin && !task.isAbsence && (task.instructions || task.files?.length) && (
+        {!isAdmin && !task.isAbsence && (task.instructions || task.files?.length > 0) && (
           <div style={{display:'flex',gap:'4px',marginTop:'3px',flexWrap:'wrap'}}>
             {task.instructions && <span style={{fontSize:compact?'8px':'9px',fontWeight:900,color:'#d97706',background:'#fef3c7',border:'1px solid #fcd34d',borderRadius:'4px',padding:'1px 5px',textTransform:'uppercase',letterSpacing:'0.03em'}}>📋 Instrucciones</span>}
             {task.files?.length > 0 && <span style={{fontSize:compact?'8px':'9px',fontWeight:900,color:'#7c3aed',background:'#f5f3ff',border:'1px solid #c4b5fd',borderRadius:'4px',padding:'1px 5px',textTransform:'uppercase',letterSpacing:'0.03em'}}>📎 {task.files.length > 1 ? `${task.files.length} docs` : 'Documento'}</span>}
