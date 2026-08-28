@@ -79,10 +79,10 @@
     .mobile-cards { display: none !important; }
     .main-card { border-radius: 0 !important; box-shadow: none !important; border: 1px solid #94a3b8 !important; width: 100% !important; max-width: 100% !important; overflow: visible !important; max-height: none !important; flex: none !important; display: block !important; }
     .no-print-extra-week { display: none !important; }
-    table { min-width: 0 !important; width: 100% !important; table-layout: fixed !important; font-size: 10.5px !important; }
+    table { min-width: 0 !important; width: 100% !important; table-layout: fixed !important; font-size: 9.5px !important; }
     th, td { overflow: hidden !important; padding: 6px !important; }
-    .task-card { break-inside: avoid !important; page-break-inside: avoid !important; font-size: 10.5px !important; padding: 5px 7px !important; }
-    .task-card div { font-size: 10.5px !important; }
+    .task-card { break-inside: avoid !important; page-break-inside: avoid !important; font-size: 9.5px !important; padding: 5px 7px !important; }
+    .task-card div { font-size: 9.5px !important; }
     tr { break-inside: avoid !important; page-break-inside: avoid !important; }
     .animate-pulse { animation: none !important; }
     div[style*="position:sticky"], td[style*="position:sticky"], th[style*="position:sticky"] { position: relative !important; }
@@ -296,8 +296,10 @@ function TaskCard({ task, highlight, isAdmin, compact, draggable, selectionMode,
   const [tipPos, setTipPos] = useState(null);
   const [dragOver, setDragOver] = useState(false);
   const cardRef = React.useRef(null);
-  const bg = selected ? '#dbeafe' : highlight ? '#ccff00' : task.isAbsence ? '#fef3c7' : task.completed ? '#dcfce7' : 'white';
-  const border = selected ? '#2563eb' : dragOver ? '#2563eb' : highlight ? '#99cc00' : task.isAbsence ? '#fcd34d' : task.completed ? '#86efac' : '#bfdbfe';
+  const isJustifiedAbsence = task.id === 'AUSENCIA JUSTIFICADA';
+  const bg = selected ? '#dbeafe' : highlight ? '#ccff00' : (task.isAbsence || isJustifiedAbsence) ? '#fef3c7' : task.completed ? '#dcfce7' : 'white';
+  const border = selected ? '#2563eb' : dragOver ? '#2563eb' : highlight ? '#99cc00' : (task.isAbsence || isJustifiedAbsence) ? '#fcd34d' : task.completed ? '#86efac' : '#bfdbfe';
+  const textColor = isJustifiedAbsence ? '#dc2626' : undefined;
   const handleEnter = () => {
     setHover(true);
     if (cardRef.current) {
@@ -344,8 +346,8 @@ function TaskCard({ task, highlight, isAdmin, compact, draggable, selectionMode,
         </div>
       )}
       <div style={{width:'100%'}}>
-        <div style={{fontWeight:900,color:'#1e293b',textTransform:'uppercase',fontSize:compact?'11px':'12px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',paddingRight: hover ? '52px' : '0'}}>{task.isAbsence ? task.id : `${task.id} - ${task.customer}`}</div>
-        {!task.isAbsence && <div style={{fontSize:compact?'10px':'11px',fontWeight:700,color:'#475569',textTransform:'uppercase',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',lineHeight:1,paddingRight: hover ? '52px' : '0'}}>{task.reference}</div>}
+        <div style={{fontWeight:900,color:textColor||'#1e293b',textTransform:'uppercase',fontSize:compact?'11px':'12px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',paddingRight: hover ? '52px' : '0'}}>{task.isAbsence ? task.id : `${task.id} - ${task.customer}`}</div>
+        {!task.isAbsence && <div style={{fontSize:compact?'10px':'11px',fontWeight:700,color:textColor||'#475569',textTransform:'uppercase',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',lineHeight:1,paddingRight: hover ? '52px' : '0'}}>{task.reference}</div>}
         {!isAdmin && !task.isAbsence && (task.instructions || task.files?.length) && (
           <div style={{display:'flex',gap:'4px',marginTop:'3px',flexWrap:'wrap'}}>
             {task.instructions && <span style={{fontSize:compact?'8px':'9px',fontWeight:900,color:'#d97706',background:'#fef3c7',border:'1px solid #fcd34d',borderRadius:'4px',padding:'1px 5px',textTransform:'uppercase',letterSpacing:'0.03em'}}>📋 Instrucciones</span>}
@@ -1545,9 +1547,9 @@ function App() {
                       <div style={{textAlign:'center',padding:'16px',color:'#dc2626',fontWeight:900,fontSize:'11px',textTransform:'uppercase'}} className="animate-pulse">SIN TAREA ASIGNADA</div>
                     ) : dayTasks.map(task => (
                       <div key={task.internalId} onClick={() => openTaskView(task)}
-                        style={{padding:'12px',borderRadius:'12px',border:`1.5px solid ${task.isAbsence?'#fcd34d':task.completed?'#86efac':'#bfdbfe'}`,background:task.isAbsence?'#fef3c7':task.completed?'#dcfce7':'#eff6ff',cursor:'pointer'}}>
-                        <div style={{fontWeight:900,fontSize:'13px',color:'#1e293b',textTransform:'uppercase'}}>{task.isAbsence ? task.id : `${task.id} - ${task.customer}`}</div>
-                        {!task.isAbsence && <div style={{fontSize:'12px',color:'#475569',fontWeight:700,textTransform:'uppercase',marginTop:'2px'}}>{task.reference}</div>}
+                        style={{padding:'12px',borderRadius:'12px',border:`1.5px solid ${(task.isAbsence||task.id==='AUSENCIA JUSTIFICADA')?'#fcd34d':task.completed?'#86efac':'#bfdbfe'}`,background:(task.isAbsence||task.id==='AUSENCIA JUSTIFICADA')?'#fef3c7':task.completed?'#dcfce7':'#eff6ff',cursor:'pointer'}}>
+                        <div style={{fontWeight:900,fontSize:'13px',color:task.id==='AUSENCIA JUSTIFICADA'?'#dc2626':'#1e293b',textTransform:'uppercase'}}>{task.isAbsence ? task.id : `${task.id} - ${task.customer}`}</div>
+                        {!task.isAbsence && <div style={{fontSize:'12px',color:task.id==='AUSENCIA JUSTIFICADA'?'#dc2626':'#475569',fontWeight:700,textTransform:'uppercase',marginTop:'2px'}}>{task.reference}</div>}
                         {!task.isAbsence && (task.instructions || task.files?.length > 0) && (
                           <div style={{display:'flex',gap:'6px',marginTop:'6px',flexWrap:'wrap'}}>
                             {task.instructions && <span style={{fontSize:'10px',fontWeight:900,color:'#d97706',background:'#fef3c7',border:'1px solid #fcd34d',borderRadius:'6px',padding:'2px 8px',textTransform:'uppercase'}}>📋 Instrucciones</span>}
