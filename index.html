@@ -398,15 +398,14 @@ function ThDay({ date, idx, isH, todayISO, tasks, techs, stickyTop, showWeekLabe
 function TechRow({ t, columnLayout, holidays, tasks, isAdmin, techWeekClipboard, clipboard, searchTerm, compact, dayClipboard, selectionMode, selectedIds, onNewTask, onPasteTask, onEditTask, onCopyTask, onDeleteTask, onToggleCompleted, onViewTask, onCopyTechWeek, onPasteTechWeek, onPasteTechWeekAt, onDuplicateNextWeek, onCopyDay, onPasteDay, onReorderDay, onToggleSelect }) {
   const [hovering, setHovering] = useState(false);
   const shiftColor = t.shiftType==='INTENSIVA'?'#16a34a':'#2563eb';
-  const shiftBg = t.shiftType==='INTENSIVA'?'#dcfce7':'#dbeafe';
   return (
     <tr style={{borderBottom:'2px solid #94a3b8'}}>
       <td style={{padding:'12px',background:'white',position:'sticky',left:0,zIndex:10,borderRight:'1px solid #94a3b8',boxShadow:'2px 0 4px rgba(0,0,0,0.05)',minWidth:'144px'}}>
         <div onMouseEnter={() => setHovering(true)} onMouseLeave={() => setHovering(false)} style={{display:'flex',alignItems:'center',gap:'8px',position:'relative'}}>
-          <div style={{overflow:'hidden',flex:1,minWidth:0}}>
+          <div title={t.shiftType} style={{position:'absolute',top:'-4px',right:'0',width:'16px',height:'16px',borderRadius:'50%',background:shiftColor,color:'white',fontSize:'9px',fontWeight:900,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>{t.shiftType==='INTENSIVA'?'I':'N'}</div>
+          <div style={{overflow:'hidden',flex:1,minWidth:0,paddingRight:'18px'}}>
             <div style={{fontWeight:900,textTransform:'uppercase',fontSize:'12px',color:'#1e293b',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.name}</div>
             <div style={{fontWeight:700,color:'#475569',fontSize:'11px',textTransform:'uppercase',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.surname}</div>
-            <span style={{display:'inline-block',marginTop:'3px',fontSize:'8px',fontWeight:900,color:shiftColor,background:shiftBg,border:`1px solid ${shiftColor}`,borderRadius:'4px',padding:'1px 5px',textTransform:'uppercase',letterSpacing:'0.03em'}}>{t.shiftType}</span>
           </div>
           {isAdmin && hovering && (
             <div style={{position:'absolute',top:'50%',right:0,transform:'translateY(-50%)',display:'flex',gap:'2px',background:'rgba(255,255,255,0.92)',padding:'2px',borderRadius:'6px',boxShadow:'0 1px 4px rgba(0,0,0,0.15)',border:'1px solid #e2e8f0',zIndex:1}}>
@@ -514,6 +513,9 @@ function App() {
   const [autoFilledFiles, setAutoFilledFiles] = useState([]);
   const [pendingFiles, setPendingFiles] = useState([]);
   const [repeatEnabled, setRepeatEnabled] = useState(false);
+  const [formJustifiedAbsence, setFormJustifiedAbsence] = useState(false);
+  const [formHourInterval, setFormHourInterval] = useState("");
+  const [formMotivo, setFormMotivo] = useState("");
   const [repeatFreq, setRepeatFreq] = useState('weekly');
   const [repeatCount, setRepeatCount] = useState(4);
   const [taskComments, setTaskComments] = useState([]);
@@ -753,11 +755,25 @@ function App() {
   const handleOpenNewTask = (techId, date) => {
     setSelectedSlot({ techId, dateISO: formatDateISO(date) }); setTempAssignedTechs([techId]);
     setEditingTask(null); setFormTaskId(""); setFormCustomer(""); setFormReference(""); setFormInstructions(""); setFormObservations(""); setAutoFilledFiles([]); setPendingFiles([]);
-    setRepeatEnabled(false); setRepeatFreq('weekly'); setRepeatCount(4); setModalMode('task');
+    setRepeatEnabled(false); setRepeatFreq('weekly'); setRepeatCount(4);
+    setFormJustifiedAbsence(false); setFormHourInterval(""); setFormMotivo("");
+    setModalMode('task');
   };
 
   const handleSaveTask = async (e) => {
     e.preventDefault();
+    if (formJustifiedAbsence) {
+      if (!formHourInterval.trim() || !formMotivo.trim()) { alert('Rellena el intervalo de horas y el motivo.'); return; }
+      setSaving(true);
+      const taskData = { internalId: newId(), id: 'AUSENCIA JUSTIFICADA', customer: formMotivo.toUpperCase(), reference: formHourInterval, instructions: '', observations: '', date: selectedSlot.dateISO, techIds: tempAssignedTechs, completed: false, isAbsence: false, files: [], taskOrder: 0 };
+      skipNextToastRef.current = true;
+      const { error } = await sb.from('tasks').insert(localTaskToDB(taskData));
+      setSaving(false);
+      if (error) { alert('Error al guardar: ' + error.message); return; }
+      logAudit(sb, user, 'CREAR_AUSENCIA_JUSTIFICADA', `${formHourInterval} - ${formMotivo}`);
+      closeModal();
+      return;
+    }
     // Aviso si el ID ya existe con otro cliente/referencia (posible error de tecleo o colisión)
     if (!editingTask) {
       const mismatch = tasks.find(t => !t.isAbsence && t.id === formTaskId && (t.customer !== formCustomer || t.reference !== formReference));
@@ -1179,7 +1195,7 @@ function App() {
     setEditingTask(task); setFormTaskId(task.id); setFormCustomer(task.customer); setFormReference(task.reference);
     setFormInstructions(task.instructions || ''); setFormObservations(task.observations || ''); setAutoFilledFiles([]);
     setSelectedSlot({ techId: task.techIds[0], dateISO: task.date }); setTempAssignedTechs(task.techIds); setPendingFiles([]);
-    setRepeatEnabled(false); setModalMode('task');
+    setRepeatEnabled(false); setFormJustifiedAbsence(false); setModalMode('task');
   };
 
   const handleCopyTask = (task) => { if (!task.isAbsence) setClipboard(task); };
@@ -1715,6 +1731,7 @@ function App() {
             <button onClick={closeModal} style={{background:'none',border:'none',cursor:'pointer'}}><X size={20} /></button>
           </div>
           <form onSubmit={handleSaveTask} style={{padding:'24px',display:'flex',flexDirection:'column',gap:'16px'}}>
+            {!formJustifiedAbsence && (<>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px'}}>
               <div><label className="label-form">ID Tarea</label><input required className="input-form" style={{textTransform:'uppercase'}} value={formTaskId} onChange={e => handleIdChange(e.target.value)} placeholder="000-00" /></div>
               <div><label className="label-form">Cliente</label><input required className="input-form" style={{textTransform:'uppercase'}} value={formCustomer} onChange={e => setFormCustomer(e.target.value.toUpperCase())} placeholder="NOMBRE" /></div>
@@ -1731,7 +1748,8 @@ function App() {
               </div>
               {showTechDropdown && (<div style={{position:'absolute',zIndex:40,marginTop:'4px',width:'100%',background:'white',border:'1px solid #e2e8f0',borderRadius:'12px',boxShadow:'0 10px 25px rgba(0,0,0,0.1)',padding:'8px',maxHeight:'160px',overflowY:'auto'}}>{techs.map(t => (<div key={t.id} onClick={() => toggleTechInTask(t.id)} style={{padding:'8px 10px',borderRadius:'8px',cursor:'pointer',fontSize:'12px',fontWeight:700,background:tempAssignedTechs.includes(t.id)?'#eff6ff':'transparent',color:tempAssignedTechs.includes(t.id)?'#1d4ed8':'#334155'}}>{t.name} {t.surname}</div>))}</div>)}
             </div>
-            {!editingTask && (
+            </>)}
+            {!editingTask && !formJustifiedAbsence && (
               <div style={{background:'#f8fafc',padding:'12px',borderRadius:'12px',border:'1px solid #e2e8f0'}}>
                 <label style={{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer'}}>
                   <input type="checkbox" checked={repeatEnabled} onChange={e => setRepeatEnabled(e.target.checked)} />
@@ -1755,6 +1773,21 @@ function App() {
                 )}
               </div>
             )}
+            {!editingTask && (
+              <div style={{background:formJustifiedAbsence?'#fffbeb':'#f8fafc',padding:'12px',borderRadius:'12px',border:formJustifiedAbsence?'1px solid #fcd34d':'1px solid #e2e8f0'}}>
+                <label style={{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer'}}>
+                  <input type="checkbox" checked={formJustifiedAbsence} onChange={e => { setFormJustifiedAbsence(e.target.checked); if (e.target.checked) setRepeatEnabled(false); }} />
+                  <span className="label-form" style={{margin:0,color:formJustifiedAbsence?'#92400e':undefined}}>Ausencia justificada</span>
+                </label>
+                {formJustifiedAbsence && (
+                  <div style={{display:'flex',flexDirection:'column',gap:'10px',marginTop:'10px'}}>
+                    <div><label className="label-form">Intervalo de horas</label><input required className="input-form" value={formHourInterval} onChange={e => setFormHourInterval(e.target.value)} placeholder="Ej: 10:00 a 12:00" /></div>
+                    <div><label className="label-form">Motivo</label><input required className="input-form" style={{textTransform:'uppercase'}} value={formMotivo} onChange={e => setFormMotivo(e.target.value)} placeholder="Ej: CITA MÉDICA" /></div>
+                  </div>
+                )}
+              </div>
+            )}
+            {!formJustifiedAbsence && (<>
             <div><label className="label-form">Instrucciones</label><textarea className="input-form" value={formInstructions} onChange={e => setFormInstructions(e.target.value)} placeholder="Detalles..." style={{height:'80px',resize:'none'}} /></div>
             <div>
               <label className="label-form">Documentos adjuntos</label>
@@ -1816,6 +1849,7 @@ function App() {
                 </div>
               )}
             </div>
+            </>)}
             <button type="submit" disabled={saving} style={{width:'100%',background:'#2563eb',color:'white',fontWeight:900,padding:'14px',borderRadius:'16px',border:'none',cursor:'pointer',textTransform:'uppercase',fontSize:'12px',letterSpacing:'2px',opacity:saving?0.7:1}}>{saving ? 'Guardando...' : 'Guardar Tarea'}</button>
           </form>
         </Modal>
