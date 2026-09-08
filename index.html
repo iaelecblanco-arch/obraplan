@@ -102,7 +102,7 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // ─── URLs del portal de técnico (cambia estos dos valores por las direcciones reales) ───
-const PARTE_TRABAJO_URL = 'https://script.google.com/macros/s/AKfycbyqK-q1a2FijCoGpEnqfO4skV_nE51aaNRz0MX30erYhznvoAkdyqAV_iYugPg5P9lb2Q/exec';
+const PARTE_TRABAJO_URL = 'https://script.google.com/macros/s/AKfycbwiexk4q8p7u348sPXlSSEs4yJOeCDu9QQhLAu1WOhx6tz-ibUykeWR-nc96pz3XBRJyg/exec';
 const GESTION_OBRA_URL = 'https://eblancocloud.uk/';
 
 // --- Helpers DB ---
@@ -122,11 +122,11 @@ const dbTaskToLocal = (t) => {
       files = [{ name: t.file_name, data: t.file_data }];
     }
   }
-  return { internalId: t.internal_id, id: t.id, customer: t.customer, reference: t.reference, instructions: t.instructions || '', observations: t.observations || '', date: t.date, techIds: t.tech_ids || [], completed: t.completed, isAbsence: t.is_absence, files, hours: t.hours != null ? Number(t.hours) : null, taskOrder: t.task_order ?? 0 };
+  return { internalId: t.internal_id, id: t.id, customer: t.customer, reference: t.reference, instructions: t.instructions || '', observations: t.observations || '', date: t.date, techIds: t.tech_ids || [], completed: t.completed, isAbsence: t.is_absence, files, hours: t.hours != null ? Number(t.hours) : null, taskOrder: t.task_order ?? 0, starred: t.starred || false };
 };
 const localTaskToDB = (t) => {
   const filesJson = t.files?.length ? JSON.stringify(t.files) : null;
-  return { internal_id: t.internalId, id: t.id, customer: t.customer, reference: t.reference, instructions: t.instructions || '', observations: t.observations || '', date: t.date, tech_ids: t.techIds, completed: t.completed || false, is_absence: t.isAbsence || false, file_name: filesJson ? '__multi__' : null, file_data: filesJson, hours: t.hours != null && t.hours !== '' ? Number(t.hours) : null, task_order: t.taskOrder ?? 0 };
+  return { internal_id: t.internalId, id: t.id, customer: t.customer, reference: t.reference, instructions: t.instructions || '', observations: t.observations || '', date: t.date, tech_ids: t.techIds, completed: t.completed || false, is_absence: t.isAbsence || false, file_name: filesJson ? '__multi__' : null, file_data: filesJson, hours: t.hours != null && t.hours !== '' ? Number(t.hours) : null, task_order: t.taskOrder ?? 0, starred: t.starred || false };
 };
 const logAudit = async (sbClient, user, action, detail) => {
   try {
@@ -223,6 +223,7 @@ const Minimize = (p) => <svg xmlns="http://www.w3.org/2000/svg" width={p.size||1
 const CopyPlus = (p) => <svg xmlns="http://www.w3.org/2000/svg" width={p.size||16} height={p.size||16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/><line x1="13" y1="13" x2="13" y2="17"/><line x1="11" y1="15" x2="15" y2="15"/></svg>;
 const ClipboardPaste = (p) => <svg xmlns="http://www.w3.org/2000/svg" width={p.size||16} height={p.size||16} viewBox="0 0 24 24" fill="none" stroke={p.color||"currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 2H9a1 1 0 0 0-1 1v2c0 .6.4 1 1 1h6c.6 0 1-.4 1-1V3c0-.6-.4-1-1-1z"/><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2M16 4h2a2 2 0 0 1 2 2v2"/><line x1="12" y1="12" x2="12" y2="18"/><line x1="9" y1="15" x2="15" y2="15"/></svg>;
 const CheckCircle2 = (p) => <svg xmlns="http://www.w3.org/2000/svg" width={p.size||16} height={p.size||16} viewBox="0 0 24 24" fill="none" stroke={p.color||"currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>;
+const Star = (p) => <svg xmlns="http://www.w3.org/2000/svg" width={p.size||16} height={p.size||16} viewBox="0 0 24 24" fill={p.fill||"none"} stroke={p.color||"currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>;
 const Pencil = (p) => <svg xmlns="http://www.w3.org/2000/svg" width={p.size||16} height={p.size||16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>;
 const Trash2 = (p) => <svg xmlns="http://www.w3.org/2000/svg" width={p.size||16} height={p.size||16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>;
 const FileText = (p) => <svg xmlns="http://www.w3.org/2000/svg" width={p.size||16} height={p.size||16} viewBox="0 0 24 24" fill="none" stroke={p.color||"currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>;
@@ -301,15 +302,28 @@ function InfoBox({ label, value }) {
   );
 }
 
-function TaskCard({ task, highlight, isAdmin, compact, draggable, selectionMode, selected, onView, onToggle, onEdit, onCopy, onDelete, onDragStartTask, onDropTask, onToggleSelect }) {
+function TaskCard({ task, highlight, isAdmin, compact, draggable, selectionMode, selected, onView, onToggle, onEdit, onCopy, onDelete, onToggleStar, onDragStartTask, onDropTask, onToggleSelect }) {
   const [hover, setHover] = useState(false);
   const [tipPos, setTipPos] = useState(null);
   const [dragOver, setDragOver] = useState(false);
   const cardRef = React.useRef(null);
   const isJustifiedAbsence = task.id === 'AUSENCIA JUSTIFICADA';
-  const bg = selected ? '#dbeafe' : highlight ? '#ccff00' : (task.isAbsence || isJustifiedAbsence) ? '#fef3c7' : task.completed ? '#dcfce7' : 'white';
-  const border = selected ? '#2563eb' : dragOver ? '#2563eb' : highlight ? '#99cc00' : (task.isAbsence || isJustifiedAbsence) ? '#fcd34d' : task.completed ? '#86efac' : '#bfdbfe';
-  const textColor = isJustifiedAbsence ? '#dc2626' : undefined;
+  const isVacaciones = task.isAbsence && task.id === 'VACACIONES';
+  const isOtherAbsence = task.isAbsence && !isVacaciones;
+  const absenceTextColor = isVacaciones ? '#15803d' : isOtherAbsence ? '#1e3a8a' : undefined;
+  const bg = selected ? '#dbeafe' : highlight ? '#ccff00'
+    : task.isAbsence ? 'white'
+    : isJustifiedAbsence ? '#fef3c7'
+    : task.completed ? '#dcfce7'
+    : task.starred ? '#f3e8ff'
+    : 'white';
+  const border = selected ? '#2563eb' : dragOver ? '#2563eb' : highlight ? '#99cc00'
+    : isVacaciones ? '#86efac' : isOtherAbsence ? '#93c5fd'
+    : isJustifiedAbsence ? '#fcd34d'
+    : task.completed ? '#86efac'
+    : task.starred ? '#d8b4fe'
+    : '#bfdbfe';
+  const textColor = isJustifiedAbsence ? '#dc2626' : absenceTextColor;
   const handleEnter = () => {
     setHover(true);
     if (cardRef.current) {
@@ -333,6 +347,7 @@ function TaskCard({ task, highlight, isAdmin, compact, draggable, selectionMode,
       {!selectionMode && hover && (
         <div onClick={e => e.stopPropagation()} style={{position:'absolute',top:'2px',right:'2px',display:'flex',gap:'2px',background:'rgba(255,255,255,0.97)',borderRadius:'4px',padding:'2px',boxShadow:'0 1px 4px rgba(0,0,0,0.15)',zIndex:20}}>
           <button onClick={onToggle} style={{padding:'2px',background:'none',border:'none',cursor:'pointer',color:task.completed?'#16a34a':'#cbd5e1',display:'flex'}}><CheckCircle2 size={11} /></button>
+          {!task.isAbsence && <button onClick={onToggleStar} title="Marcar como prioritaria" style={{padding:'2px',background:'none',border:'none',cursor:'pointer',color:task.starred?'#a855f7':'#cbd5e1',display:'flex'}}><Star size={11} fill={task.starred?'#a855f7':'none'} /></button>}
           {isAdmin && !task.isAbsence && <button onClick={onEdit} style={{padding:'2px',background:'none',border:'none',cursor:'pointer',color:'#94a3b8',display:'flex'}}><Pencil size={11} /></button>}
           {isAdmin && !task.isAbsence && <button onClick={onCopy} style={{padding:'2px',background:'none',border:'none',cursor:'pointer',color:'#94a3b8',display:'flex'}}><Copy size={11} /></button>}
           {isAdmin && <button onClick={onDelete} style={{padding:'2px',background:'none',border:'none',cursor:'pointer',color:'#94a3b8',display:'flex'}}><Trash2 size={11} /></button>}
@@ -407,7 +422,7 @@ function ThDay({ date, idx, isH, todayISO, tasks, techs, stickyTop, showWeekLabe
   );
 }
 
-function TechRow({ t, columnLayout, holidays, tasks, isAdmin, techWeekClipboard, clipboard, searchTerm, compact, dayClipboard, selectionMode, selectedIds, printHidden, onNewTask, onPasteTask, onEditTask, onCopyTask, onDeleteTask, onToggleCompleted, onViewTask, onCopyTechWeek, onPasteTechWeek, onPasteTechWeekAt, onDuplicateNextWeek, onCopyDay, onPasteDay, onReorderDay, onToggleSelect }) {
+function TechRow({ t, columnLayout, holidays, tasks, isAdmin, techWeekClipboard, clipboard, searchTerm, compact, dayClipboard, selectionMode, selectedIds, printHidden, onNewTask, onPasteTask, onEditTask, onCopyTask, onDeleteTask, onToggleCompleted, onToggleStar, onViewTask, onCopyTechWeek, onPasteTechWeek, onPasteTechWeekAt, onDuplicateNextWeek, onCopyDay, onPasteDay, onReorderDay, onToggleSelect }) {
   const [hovering, setHovering] = useState(false);
   const shiftColor = t.shiftType==='INTENSIVA'?'#16a34a':'#2563eb';
   return (
@@ -464,7 +479,7 @@ function TechRow({ t, columnLayout, holidays, tasks, isAdmin, techWeekClipboard,
                 return (
                   <TaskCard key={task.internalId} task={task} highlight={highlight} isAdmin={isAdmin} compact={compact}
                     draggable={canDrag} selectionMode={selectionMode} selected={selectedIds?.has(task.internalId)}
-                    onView={() => onViewTask(task)} onToggle={() => onToggleCompleted(task.internalId)}
+                    onView={() => onViewTask(task)} onToggle={() => onToggleCompleted(task.internalId)} onToggleStar={() => onToggleStar(task.internalId)}
                     onEdit={() => onEditTask(task)} onCopy={() => onCopyTask(task)} onDelete={() => onDeleteTask(task.internalId)}
                     onDropTask={(draggedId, targetId) => onReorderDay(t.id, dISO, draggedId, targetId)}
                     onToggleSelect={onToggleSelect} />
@@ -865,6 +880,17 @@ function App() {
     skipNextToastRef.current = true;
     await sb.from('tasks').update({ completed: nv }).eq('internal_id', id);
     logAudit(sb, user, nv ? 'COMPLETAR_TAREA' : 'REABRIR_TAREA', `${task.id} - ${task.customer}`);
+  };
+
+  const toggleTaskStarred = async (id) => {
+    const task = tasks.find(t => t.internalId === id); if (!task) return;
+    const nv = !task.starred;
+    setTasks(tasks.map(t => t.internalId === id ? { ...t, starred: nv } : t));
+    if (selectedTask?.internalId === id) setSelectedTask(prev => ({ ...prev, starred: nv }));
+    skipNextToastRef.current = true;
+    const { error } = await sb.from('tasks').update({ starred: nv }).eq('internal_id', id);
+    if (error) { pushToast('⚠️ Falta crear la columna "starred" en Supabase'); return; }
+    logAudit(sb, user, nv ? 'MARCAR_PRIORITARIA' : 'QUITAR_PRIORITARIA', `${task.id} - ${task.customer}`);
   };
 
   const handleDeleteTask = async (id) => {
@@ -1473,7 +1499,7 @@ function App() {
                       <TechRow key={`${dup}-${t.id}`} t={t} columnLayout={weekDates.map((date, idx) => ({kind:'day', date, idx}))} holidays={holidays} tasks={tasks} isAdmin={false} compact={true}
                         techWeekClipboard={null} clipboard={null} searchTerm=""
                         onNewTask={noop} onPasteTask={noop} onEditTask={noop}
-                        onCopyTask={noop} onDeleteTask={noop} onToggleCompleted={noop}
+                        onCopyTask={noop} onDeleteTask={noop} onToggleCompleted={noop} onToggleStar={noop}
                         onViewTask={noop} onCopyTechWeek={noop} onPasteTechWeek={noop} onDuplicateNextWeek={noop} />
                     )))}
                   </tbody>
@@ -1619,11 +1645,18 @@ function App() {
                   <div style={{padding:'10px',display:'flex',flexDirection:'column',gap:'8px'}}>
                     {dayTasks.length === 0 ? (
                       <div style={{textAlign:'center',padding:'16px',color:'#dc2626',fontWeight:900,fontSize:'11px',textTransform:'uppercase'}} className="animate-pulse">SIN TAREA ASIGNADA</div>
-                    ) : dayTasks.map(task => (
+                    ) : dayTasks.map(task => {
+                      const mIsVacaciones = task.isAbsence && task.id === 'VACACIONES';
+                      const mIsOtherAbsence = task.isAbsence && !mIsVacaciones;
+                      const mIsJustified = task.id === 'AUSENCIA JUSTIFICADA';
+                      const mBorder = mIsVacaciones ? '#86efac' : mIsOtherAbsence ? '#93c5fd' : mIsJustified ? '#fcd34d' : task.completed ? '#86efac' : task.starred ? '#d8b4fe' : '#bfdbfe';
+                      const mBg = task.isAbsence ? 'white' : mIsJustified ? '#fef3c7' : task.completed ? '#dcfce7' : task.starred ? '#f3e8ff' : '#eff6ff';
+                      const mText = mIsVacaciones ? '#15803d' : mIsOtherAbsence ? '#1e3a8a' : mIsJustified ? '#dc2626' : undefined;
+                      return (
                       <div key={task.internalId} onClick={() => openTaskView(task)}
-                        style={{padding:'12px',borderRadius:'12px',border:`1.5px solid ${(task.isAbsence||task.id==='AUSENCIA JUSTIFICADA')?'#fcd34d':task.completed?'#86efac':'#bfdbfe'}`,background:(task.isAbsence||task.id==='AUSENCIA JUSTIFICADA')?'#fef3c7':task.completed?'#dcfce7':'#eff6ff',cursor:'pointer'}}>
-                        <div style={{fontWeight:900,fontSize:'13px',color:task.id==='AUSENCIA JUSTIFICADA'?'#dc2626':'#1e293b',textTransform:'uppercase'}}>{task.isAbsence ? task.id : `${task.id==='AUSENCIA JUSTIFICADA' ? 'AUSENCIA' : task.id} - ${task.customer}`}</div>
-                        {!task.isAbsence && <div style={{fontSize:'12px',color:task.id==='AUSENCIA JUSTIFICADA'?'#dc2626':'#475569',fontWeight:700,textTransform:'uppercase',marginTop:'2px'}}>{task.reference}</div>}
+                        style={{padding:'12px',borderRadius:'12px',border:`1.5px solid ${mBorder}`,background:mBg,cursor:'pointer'}}>
+                        <div style={{fontWeight:900,fontSize:'13px',color:mText||'#1e293b',textTransform:'uppercase'}}>{task.isAbsence ? task.id : `${mIsJustified ? 'AUSENCIA' : task.id} - ${task.customer}`}</div>
+                        {!task.isAbsence && <div style={{fontSize:'12px',color:mText||'#475569',fontWeight:700,textTransform:'uppercase',marginTop:'2px'}}>{task.reference}</div>}
                         {!task.isAbsence && (task.instructions || task.files?.length > 0) && (
                           <div style={{display:'flex',gap:'6px',marginTop:'6px',flexWrap:'wrap'}}>
                             {task.instructions && <span style={{fontSize:'10px',fontWeight:900,color:'#d97706',background:'#fef3c7',border:'1px solid #fcd34d',borderRadius:'6px',padding:'2px 8px',textTransform:'uppercase'}}>📋 Instrucciones</span>}
@@ -1648,7 +1681,8 @@ function App() {
                         })()}
                         {task.completed && <div style={{marginTop:'6px',display:'inline-flex',alignItems:'center',gap:'4px',background:'#16a34a',color:'white',borderRadius:'6px',padding:'2px 8px',fontSize:'10px',fontWeight:900}}><CheckCircle2 size={10} color="white" /> COMPLETADO</div>}
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               );
@@ -1695,7 +1729,7 @@ function App() {
                   selectionMode={selectionMode} selectedIds={selectedIds}
                   printHidden={printSelectedIds.length > 0 && !printSelectedIds.some(id => String(id) === String(t.id))}
                   onNewTask={handleOpenNewTask} onPasteTask={handlePasteTask} onEditTask={handleEditTask}
-                  onCopyTask={handleCopyTask} onDeleteTask={handleDeleteTask} onToggleCompleted={toggleTaskCompleted}
+                  onCopyTask={handleCopyTask} onDeleteTask={handleDeleteTask} onToggleCompleted={toggleTaskCompleted} onToggleStar={toggleTaskStarred}
                   onViewTask={openTaskView}
                   onCopyTechWeek={copyTechWeek} onPasteTechWeek={pasteTechWeek} onPasteTechWeekAt={pasteTechWeekAtSeparator} onDuplicateNextWeek={duplicateTechToNextWeek}
                   onCopyDay={copyDay} onPasteDay={pasteDay} onReorderDay={reorderDayTasks} onToggleSelect={toggleSelectTask} />
@@ -1735,7 +1769,7 @@ function App() {
                     <div key={i} style={{display:'flex',alignItems:'center',gap:'10px',padding:'10px 12px',background:'#eff6ff',borderRadius:'10px',border:'1px solid #bfdbfe'}}>
                       <span style={{fontSize:'16px',lineHeight:1}}>{icon}</span>
                       <span style={{fontWeight:700,fontSize:'11px',color:'#1d4ed8',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{f.name}</span>
-                      {f.data && (
+                      {f.data && !isAdmin && (
                         <button onClick={() => {
                           try {
                             const base64 = f.data.split(',')[1];
@@ -1750,6 +1784,9 @@ function App() {
                             setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
                           } catch(e) { alert('Error: ' + e.message); }
                         }} style={{padding:'5px 10px',background:'#2563eb',color:'white',border:'none',borderRadius:'8px',fontSize:'10px',fontWeight:900,cursor:'pointer',textTransform:'uppercase',whiteSpace:'nowrap'}}>ABRIR</button>
+                      )}
+                      {f.data && isAdmin && (
+                        <span title="Los administradores no pueden abrir documentos, solo los técnicos" style={{padding:'5px 8px',background:'#f1f5f9',color:'#94a3b8',borderRadius:'8px',fontSize:'10px',fontWeight:900,display:'flex',alignItems:'center',gap:'4px',whiteSpace:'nowrap'}}><Lock size={11} /> SOLO TÉCNICO</span>
                       )}
                     </div>
                   );
