@@ -313,17 +313,17 @@ function TaskCard({ task, highlight, isAdmin, compact, draggable, selectionMode,
   const absenceTextColor = isVacaciones ? '#15803d' : isOtherAbsence ? '#1e3a8a' : undefined;
   const bg = selected ? '#dbeafe' : highlight ? '#ccff00'
     : task.isAbsence ? 'white'
-    : isJustifiedAbsence ? '#fef3c7'
+    : isJustifiedAbsence ? 'white'
     : task.completed ? '#dcfce7'
     : task.starred ? '#f3e8ff'
     : 'white';
   const border = selected ? '#2563eb' : dragOver ? '#2563eb' : highlight ? '#99cc00'
     : isVacaciones ? '#86efac' : isOtherAbsence ? '#93c5fd'
-    : isJustifiedAbsence ? '#fcd34d'
+    : isJustifiedAbsence ? '#c4b5fd'
     : task.completed ? '#86efac'
     : task.starred ? '#d8b4fe'
     : '#bfdbfe';
-  const textColor = isJustifiedAbsence ? '#dc2626' : absenceTextColor;
+  const textColor = isJustifiedAbsence ? '#7c3aed' : absenceTextColor;
   const handleEnter = () => {
     setHover(true);
     if (cardRef.current) {
@@ -543,7 +543,8 @@ function App() {
   const [pendingFiles, setPendingFiles] = useState([]);
   const [repeatEnabled, setRepeatEnabled] = useState(false);
   const [formJustifiedAbsence, setFormJustifiedAbsence] = useState(false);
-  const [formHourInterval, setFormHourInterval] = useState("");
+  const [formHourStart, setFormHourStart] = useState("");
+  const [formHourEnd, setFormHourEnd] = useState("");
   const [formMotivo, setFormMotivo] = useState("");
   const [repeatFreq, setRepeatFreq] = useState('weekly');
   const [repeatCount, setRepeatCount] = useState(4);
@@ -781,7 +782,8 @@ function App() {
   const weekNum = useMemo(() => getWeekNumber(currentMonday), [currentMonday]);
 
   const handleIdChange = (val) => {
-    const upperId = val.toUpperCase(); setFormTaskId(upperId);
+    const upperId = val.toUpperCase().replace(/\//g, '-').slice(0, 7);
+    setFormTaskId(upperId);
     const ex = tasks.find(t => t.id === upperId && !t.isAbsence);
     if (ex) {
       setFormCustomer(ex.customer);
@@ -797,22 +799,27 @@ function App() {
     setSelectedSlot({ techId, dateISO: formatDateISO(date) }); setTempAssignedTechs([techId]);
     setEditingTask(null); setFormTaskId(""); setFormCustomer(""); setFormReference(""); setFormInstructions(""); setFormObservations(""); setAutoFilledFiles([]); setPendingFiles([]);
     setRepeatEnabled(false); setRepeatFreq('weekly'); setRepeatCount(4);
-    setFormJustifiedAbsence(false); setFormHourInterval(""); setFormMotivo("");
+    setFormJustifiedAbsence(false); setFormHourStart(""); setFormHourEnd(""); setFormMotivo("");
     setModalMode('task');
   };
 
   const handleSaveTask = async (e) => {
     e.preventDefault();
     if (formJustifiedAbsence) {
-      if (!formHourInterval.trim() || !formMotivo.trim()) { alert('Rellena el intervalo de horas y el motivo.'); return; }
+      if (!formHourStart || !formMotivo.trim()) { alert('Rellena la hora de inicio y el motivo.'); return; }
+      const hourInterval = formHourEnd ? `${formHourStart} a ${formHourEnd}` : formHourStart;
       setSaving(true);
-      const taskData = { internalId: newId(), id: 'AUSENCIA JUSTIFICADA', customer: formMotivo.toUpperCase(), reference: formHourInterval, instructions: '', observations: '', date: selectedSlot.dateISO, techIds: tempAssignedTechs, completed: false, isAbsence: false, files: [], taskOrder: 0 };
+      const taskData = { internalId: newId(), id: 'AUSENCIA JUSTIFICADA', customer: formMotivo.toUpperCase(), reference: hourInterval, instructions: '', observations: '', date: selectedSlot.dateISO, techIds: tempAssignedTechs, completed: false, isAbsence: false, files: [], taskOrder: 0 };
       skipNextToastRef.current = true;
       const { error } = await sb.from('tasks').insert(localTaskToDB(taskData));
       setSaving(false);
       if (error) { alert('Error al guardar: ' + error.message); return; }
-      logAudit(sb, user, 'CREAR_AUSENCIA_JUSTIFICADA', `${formHourInterval} - ${formMotivo}`);
+      logAudit(sb, user, 'CREAR_AUSENCIA_JUSTIFICADA', `${hourInterval} - ${formMotivo}`);
       closeModal();
+      return;
+    }
+    if (formTaskId !== 'AUSENCIA JUSTIFICADA' && !/^[A-Z0-9]+-[A-Z0-9]+$/.test(formTaskId)) {
+      alert('⚠️ El ID de tarea no tiene un formato válido.\n\nMáximo 7 caracteres, con un guion. Ejemplos: A-0000 o 1234-26');
       return;
     }
     // Aviso si el ID ya existe con otro cliente/referencia (posible error de tecleo o colisión)
@@ -1649,9 +1656,9 @@ function App() {
                       const mIsVacaciones = task.isAbsence && task.id === 'VACACIONES';
                       const mIsOtherAbsence = task.isAbsence && !mIsVacaciones;
                       const mIsJustified = task.id === 'AUSENCIA JUSTIFICADA';
-                      const mBorder = mIsVacaciones ? '#86efac' : mIsOtherAbsence ? '#93c5fd' : mIsJustified ? '#fcd34d' : task.completed ? '#86efac' : task.starred ? '#d8b4fe' : '#bfdbfe';
-                      const mBg = task.isAbsence ? 'white' : mIsJustified ? '#fef3c7' : task.completed ? '#dcfce7' : task.starred ? '#f3e8ff' : '#eff6ff';
-                      const mText = mIsVacaciones ? '#15803d' : mIsOtherAbsence ? '#1e3a8a' : mIsJustified ? '#dc2626' : undefined;
+                      const mBorder = mIsVacaciones ? '#86efac' : mIsOtherAbsence ? '#93c5fd' : mIsJustified ? '#c4b5fd' : task.completed ? '#86efac' : task.starred ? '#d8b4fe' : '#bfdbfe';
+                      const mBg = task.isAbsence ? 'white' : mIsJustified ? 'white' : task.completed ? '#dcfce7' : task.starred ? '#f3e8ff' : '#eff6ff';
+                      const mText = mIsVacaciones ? '#15803d' : mIsOtherAbsence ? '#1e3a8a' : mIsJustified ? '#7c3aed' : undefined;
                       return (
                       <div key={task.internalId} onClick={() => openTaskView(task)}
                         style={{padding:'12px',borderRadius:'12px',border:`1.5px solid ${mBorder}`,background:mBg,cursor:'pointer'}}>
@@ -1769,7 +1776,7 @@ function App() {
                     <div key={i} style={{display:'flex',alignItems:'center',gap:'10px',padding:'10px 12px',background:'#eff6ff',borderRadius:'10px',border:'1px solid #bfdbfe'}}>
                       <span style={{fontSize:'16px',lineHeight:1}}>{icon}</span>
                       <span style={{fontWeight:700,fontSize:'11px',color:'#1d4ed8',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{f.name}</span>
-                      {f.data && !isAdmin && (
+                      {f.data && (
                         <button onClick={() => {
                           try {
                             const base64 = f.data.split(',')[1];
@@ -1784,9 +1791,6 @@ function App() {
                             setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
                           } catch(e) { alert('Error: ' + e.message); }
                         }} style={{padding:'5px 10px',background:'#2563eb',color:'white',border:'none',borderRadius:'8px',fontSize:'10px',fontWeight:900,cursor:'pointer',textTransform:'uppercase',whiteSpace:'nowrap'}}>ABRIR</button>
-                      )}
-                      {f.data && isAdmin && (
-                        <span title="Los administradores no pueden abrir documentos, solo los técnicos" style={{padding:'5px 8px',background:'#f1f5f9',color:'#94a3b8',borderRadius:'8px',fontSize:'10px',fontWeight:900,display:'flex',alignItems:'center',gap:'4px',whiteSpace:'nowrap'}}><Lock size={11} /> SOLO TÉCNICO</span>
                       )}
                     </div>
                   );
@@ -1847,7 +1851,15 @@ function App() {
           <form onSubmit={handleSaveTask} style={{padding:'24px',display:'flex',flexDirection:'column',gap:'16px'}}>
             {!formJustifiedAbsence && (<>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px'}}>
-              <div><label className="label-form">ID Tarea</label><input required className="input-form" style={{textTransform:'uppercase'}} value={formTaskId} onChange={e => handleIdChange(e.target.value)} placeholder="000-00" /></div>
+              <div>
+                <label className="label-form">ID Tarea</label>
+                <input required maxLength={7} className="input-form" style={{textTransform:'uppercase',borderColor:(formTaskId && formTaskId !== 'AUSENCIA JUSTIFICADA' && !/^[A-Z0-9]+-[A-Z0-9]+$/.test(formTaskId))?'#fca5a5':undefined}} value={formTaskId} onChange={e => handleIdChange(e.target.value)} placeholder="1234-26" />
+                {formTaskId && formTaskId !== 'AUSENCIA JUSTIFICADA' && !/^[A-Z0-9]+-[A-Z0-9]+$/.test(formTaskId) ? (
+                  <p style={{fontSize:'9px',fontWeight:700,color:'#dc2626',marginTop:'3px'}}>⚠️ Formato no válido. Máx. 7 caracteres. Ejemplos: A-0000 o 1234-26</p>
+                ) : (
+                  <p style={{fontSize:'9px',fontWeight:700,color:'#94a3b8',marginTop:'3px'}}>Máx. 7 caracteres. Ejemplos: A-0000 o 1234-26</p>
+                )}
+              </div>
               <div><label className="label-form">Cliente</label><input required className="input-form" style={{textTransform:'uppercase'}} value={formCustomer} onChange={e => setFormCustomer(e.target.value.toUpperCase())} placeholder="NOMBRE" /></div>
             </div>
             <div><label className="label-form">Referencia de Obra</label><input required className="input-form" style={{textTransform:'uppercase',fontSize:'11px'}} value={formReference} onChange={e => setFormReference(e.target.value.toUpperCase())} placeholder="REFERENCIA" /></div>
@@ -1888,14 +1900,17 @@ function App() {
               </div>
             )}
             {!editingTask && (
-              <div style={{background:formJustifiedAbsence?'#fffbeb':'#f8fafc',padding:'12px',borderRadius:'12px',border:formJustifiedAbsence?'1px solid #fcd34d':'1px solid #e2e8f0'}}>
+              <div style={{background:formJustifiedAbsence?'#f5f3ff':'#f8fafc',padding:'12px',borderRadius:'12px',border:formJustifiedAbsence?'1px solid #c4b5fd':'1px solid #e2e8f0'}}>
                 <label style={{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer'}}>
                   <input type="checkbox" checked={formJustifiedAbsence} onChange={e => { setFormJustifiedAbsence(e.target.checked); if (e.target.checked) setRepeatEnabled(false); }} />
-                  <span className="label-form" style={{margin:0,color:formJustifiedAbsence?'#92400e':undefined}}>Ausencia justificada</span>
+                  <span className="label-form" style={{margin:0,color:formJustifiedAbsence?'#6d28d9':undefined}}>Ausencia justificada</span>
                 </label>
                 {formJustifiedAbsence && (
                   <div style={{display:'flex',flexDirection:'column',gap:'10px',marginTop:'10px'}}>
-                    <div><label className="label-form">Intervalo de horas</label><input required className="input-form" value={formHourInterval} onChange={e => setFormHourInterval(e.target.value)} placeholder="Ej: 10:00 a 12:00" /></div>
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px'}}>
+                      <div><label className="label-form">Hora inicio</label><input required type="time" className="input-form" value={formHourStart} onChange={e => setFormHourStart(e.target.value)} /></div>
+                      <div><label className="label-form">Hora fin (opcional)</label><input type="time" className="input-form" value={formHourEnd} onChange={e => setFormHourEnd(e.target.value)} /></div>
+                    </div>
                     <div><label className="label-form">Motivo</label><input required className="input-form" style={{textTransform:'uppercase'}} value={formMotivo} onChange={e => setFormMotivo(e.target.value)} placeholder="Ej: CITA MÉDICA" /></div>
                   </div>
                 )}
