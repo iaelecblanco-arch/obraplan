@@ -156,15 +156,15 @@ const logAudit = async (sbClient, user, action, detail) => {
   } catch (e) { /* tabla opcional: si no existe, se ignora silenciosamente */ }
 };
 
-// --- Compresión de imágenes adjuntas (reduce tamaño en Supabase) ---
+// --- Compresión de imágenes adjuntas (reduce tamaño antes de subir a Storage) ---
 // Redimensiona a un máximo de 1600px de lado y recomprime como JPEG de calidad 0.75.
-// PDFs, Word, Excel, etc. se guardan tal cual, sin tocar.
+// PDFs, Word, Excel, etc. se suben tal cual, sin tocar.
 const MAX_IMG_DIMENSION = 1600;
 const IMG_JPEG_QUALITY = 0.75;
 const compressImageFile = (file) => new Promise((resolve) => {
   const ext = file.name.split('.').pop()?.toLowerCase();
   const isCompressible = ['jpg','jpeg','png','webp'].includes(ext);
-  if (!isCompressible) { resolve(null); return; } // null = no comprimir, usar original
+  if (!isCompressible) { resolve(null); return; } // null = no comprimir, usar el archivo original
   const reader = new FileReader();
   reader.onload = (ev) => {
     const img = new Image();
@@ -179,8 +179,7 @@ const compressImageFile = (file) => new Promise((resolve) => {
       const ctx = canvas.getContext('2d');
       ctx.drawImage(img, 0, 0, width, height);
       try {
-        const dataUrl = canvas.toDataURL('image/jpeg', IMG_JPEG_QUALITY);
-        resolve(dataUrl);
+        canvas.toBlob(blob => resolve(blob), 'image/jpeg', IMG_JPEG_QUALITY);
       } catch(e) { resolve(null); }
     };
     img.onerror = () => resolve(null);
@@ -189,6 +188,17 @@ const compressImageFile = (file) => new Promise((resolve) => {
   reader.onerror = () => resolve(null);
   reader.readAsDataURL(file);
 });
+
+// --- Storage compartido: sube UNA sola vez cada archivo; las tareas solo guardan la ruta ---
+const TASK_FILES_BUCKET = 'task-files';
+const uploadFileToStorage = async (sbClient, file, taskInternalId) => {
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const path = `${taskInternalId}/${Date.now()}-${safeName}`;
+  const { error } = await sbClient.storage.from(TASK_FILES_BUCKET).upload(path, file, { upsert: true });
+  if (error) throw error;
+  return { name: file.name, path };
+};
+const getStorageFileUrl = (sbClient, path) => sbClient.storage.from(TASK_FILES_BUCKET).getPublicUrl(path).data.publicUrl;
 const dbTechToLocal = (t) => ({ id: t.id, name: t.name, surname: t.surname, username: t.username, password: t.password, role: t.role, shiftType: t.shift_type, sortOrder: t.sort_order ?? 999 });
 
 // --- Seguridad: hash de contraseñas (SHA-256 + salt del propio usuario) ---
@@ -499,7 +509,7 @@ function TechRow({ t, columnLayout, holidays, tasks, isAdmin, techWeekClipboard,
                   <TaskCard key={task.internalId} task={task} highlight={highlight} isAdmin={isAdmin} compact={compact}
                     draggable={canDrag} selectionMode={selectionMode} selected={selectedIds?.has(task.internalId)}
                     onView={() => onViewTask(task)} onToggle={() => onToggleCompleted(task.internalId)} onToggleStar={() => onToggleStar(task.internalId)}
-                    onEdit={() => onEditTask(task)} onCopy={() => onCopyTask(task)} onDelete={() => onDeleteTask(task.internalId)}
+                    onEdit={() => onEditTask(task)} onCopy={() => onCopyTask(task)} onDelete={() => onDeleteTask(task.internalId, t.id)}
                     onDropTask={(draggedId, targetId) => onReorderDay(t.id, dISO, draggedId, targetId)}
                     onToggleSelect={onToggleSelect} />
                 );
@@ -562,6 +572,8 @@ function App() {
   const [pendingFiles, setPendingFiles] = useState([]);
   const [repeatEnabled, setRepeatEnabled] = useState(false);
   const [formJustifiedAbsence, setFormJustifiedAbsence] = useState(false);
+  const [formApplyToAll, setFormApplyToAll] = useState(false);
+  const [formShareFiles, setFormShareFiles] = useState(false);
   const [formHourStart, setFormHourStart] = useState("");
   const [formHourEnd, setFormHourEnd] = useState("");
   const [formMotivo, setFormMotivo] = useState("");
@@ -693,15 +705,22 @@ function App() {
     localStorage.setItem('obraplan_dark', darkMode ? '1' : '0');
   }, [darkMode]);
 
+  const [loadTimedOut, setLoadTimedOut] = useState(false);
+
   const loadAll = useCallback(async (isBackground = false) => {
-    if (!isBackground) setLoading(true);
+    if (!isBackground) { setLoading(true); setLoadTimedOut(false); }
+    // Si la carga tarda más de 15s, avisamos y ofrecemos reintentar en vez de quedarnos colgados para siempre
+    const withTimeout = (promise, ms) => Promise.race([
+      promise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), ms)),
+    ]);
     try {
-      const [{ data: td, error: e1 }, { data: ad, error: e2 }, { data: hd, error: e3 }, { data: tkd, error: e4 }] = await Promise.all([
+      const [{ data: td, error: e1 }, { data: ad, error: e2 }, { data: hd, error: e3 }, { data: tkd, error: e4 }] = await withTimeout(Promise.all([
         sb.from('techs').select('*').order('sort_order', { ascending: true }).order('id'),
         sb.from('admins').select('*').order('id'),
         sb.from('holidays').select('*'),
         sb.from('tasks').select('internal_id, id, customer, reference, instructions, observations, date, tech_ids, completed, is_absence, hours, task_order, starred, file_count'),
-      ]);
+      ]), 15000);
       if (e1 || e2 || e3 || e4) throw (e1 || e2 || e3 || e4);
       const newTechs = (td || []).map(dbTechToLocal);
       const newAdmins = ad || [];
@@ -712,6 +731,7 @@ function App() {
       try { localStorage.setItem('obraplan_cache', JSON.stringify({ techs: newTechs, admins: newAdmins, holidays: newHolidays, tasks: newTasks, savedAt: Date.now() })); } catch(e) {}
     } catch(e) {
       console.error(e);
+      if (e.message === 'TIMEOUT' && !isBackground) { setLoadTimedOut(true); return; }
       // Sin conexión: intentar cargar la última copia guardada localmente
       try {
         const cached = JSON.parse(localStorage.getItem('obraplan_cache') || 'null');
@@ -831,7 +851,7 @@ function App() {
     setSelectedSlot({ techId, dateISO: formatDateISO(date) }); setTempAssignedTechs([techId]);
     setEditingTask(null); setFormTaskId(""); setFormCustomer(""); setFormReference(""); setFormInstructions(""); setFormObservations(""); setAutoFilledFiles([]); setPendingFiles([]);
     setRepeatEnabled(false); setRepeatFreq('weekly'); setRepeatCount(4);
-    setFormJustifiedAbsence(false); setFormHourStart(""); setFormHourEnd(""); setFormMotivo("");
+    setFormJustifiedAbsence(false); setFormHourStart(""); setFormHourEnd(""); setFormMotivo(""); setFormApplyToAll(false); setFormShareFiles(false);
     setModalMode('task');
   };
 
@@ -864,33 +884,54 @@ function App() {
     }
     setSaving(true);
     const instructions = formInstructions;
+    const taskInternalId = editingTask?.internalId || newId();
     // Start with existing files (al editar) o los autocompletados por ID (al crear), luego se añaden los nuevos
     let files;
+    let uploadedNewFiles = [];
     if (editingTask) {
       files = editingTask.filesLoaded ? [...editingTask.files] : (editingTask.fileCount > 0 ? await fetchTaskFiles(sb, editingTask.internalId) : []);
     } else {
       files = [...autoFilledFiles];
     }
     if (pendingFiles.length > 0) {
-      const newFileObjs = await Promise.all(pendingFiles.map(async f => {
-        const compressed = await compressImageFile(f);
-        if (compressed) return { name: f.name.replace(/\.(png|webp)$/i, '.jpg'), data: compressed };
-        // No es imagen comprimible (PDF, Word, etc.): guardar tal cual
-        return new Promise(resolve => {
-          const reader = new FileReader();
-          reader.onload = ev => resolve({ name: f.name, data: ev.target.result });
-          reader.readAsDataURL(f);
-        });
-      }));
-      files = [...files, ...newFileObjs];
+      try {
+        const newFileObjs = await Promise.all(pendingFiles.map(async f => {
+          const compressedBlob = await compressImageFile(f);
+          if (compressedBlob) {
+            const jpegFile = new File([compressedBlob], f.name.replace(/\.(png|webp)$/i, '.jpg'), { type: 'image/jpeg' });
+            return uploadFileToStorage(sb, jpegFile, taskInternalId);
+          }
+          // No es imagen comprimible (PDF, Word, etc.): subir tal cual
+          return uploadFileToStorage(sb, f, taskInternalId);
+        }));
+        uploadedNewFiles = newFileObjs;
+        files = [...files, ...newFileObjs];
+      } catch (e) {
+        setSaving(false);
+        alert('No se pudieron subir uno o varios archivos: ' + e.message);
+        return;
+      }
     }
     const dayTasksForOrder = tasks.filter(t => t.techIds.includes(tempAssignedTechs[0]) && t.date === selectedSlot.dateISO && !t.isAbsence);
     const nextOrder = editingTask ? (editingTask.taskOrder ?? 0) : (dayTasksForOrder.length ? Math.max(...dayTasksForOrder.map(t => t.taskOrder || 0)) + 1 : 0);
-    const taskData = { internalId: editingTask?.internalId || newId(), id: formTaskId, customer: formCustomer, reference: formReference, instructions, observations: formObservations, date: selectedSlot.dateISO, techIds: tempAssignedTechs, completed: editingTask?.completed || false, isAbsence: false, files, taskOrder: nextOrder };
+    const taskData = { internalId: taskInternalId, id: formTaskId, customer: formCustomer, reference: formReference, instructions, observations: formObservations, date: selectedSlot.dateISO, techIds: tempAssignedTechs, completed: editingTask?.completed || false, isAbsence: false, files, taskOrder: nextOrder };
     let err = null;
     skipNextToastRef.current = true;
     if (editingTask) {
       const r = await sb.from('tasks').update(localTaskToDB(taskData)).eq('internal_id', editingTask.internalId); err = r.error;
+      if (!err && formApplyToAll) {
+        const oldId = editingTask.id;
+        const related = tasks.filter(t => t.id === oldId && t.internalId !== editingTask.internalId && !t.isAbsence);
+        if (related.length > 0) {
+          const { error: e2 } = await sb.from('tasks').update({ id: formTaskId, customer: formCustomer, reference: formReference }).eq('id', oldId).neq('internal_id', editingTask.internalId);
+          if (e2) alert('La tarea se guardó, pero hubo un error al renombrar el resto: ' + e2.message);
+          else {
+            setTasks(prev => prev.map(t => (t.id === oldId && t.internalId !== editingTask.internalId && !t.isAbsence) ? { ...t, id: formTaskId, customer: formCustomer, reference: formReference } : t));
+            logAudit(sb, user, 'RENOMBRAR_TODAS', `${oldId} → ${formTaskId} (${related.length} técnicos más)`);
+            pushToast(`✅ Renombrado en ${related.length + 1} tarea(s) más`);
+          }
+        }
+      }
     } else if (repeatEnabled && repeatCount > 0) {
       // Generar ocurrencias adicionales según la frecuencia elegida
       const occurrences = [taskData];
@@ -913,6 +954,24 @@ function App() {
     setSaving(false);
     if (err) { alert('Error al guardar tarea: ' + err.message); return; }
     logAudit(sb, user, editingTask ? 'EDITAR_TAREA' : 'CREAR_TAREA', `${taskData.id} - ${taskData.customer}${repeatEnabled && !editingTask ? ' (recurrente)' : ''}`);
+    // Compartir los documentos recién subidos con el resto de técnicos que tengan esta misma tarea
+    if (formShareFiles && uploadedNewFiles.length > 0) {
+      const related = tasks.filter(t => t.id === taskData.id && t.internalId !== taskInternalId && !t.isAbsence);
+      if (related.length > 0) {
+        let okCount = 0;
+        for (const rt of related) {
+          const existingFiles = rt.filesLoaded ? rt.files : (rt.fileCount > 0 ? await fetchTaskFiles(sb, rt.internalId) : []);
+          const mergedFiles = [...existingFiles, ...uploadedNewFiles];
+          const { error: e3 } = await sb.from('tasks').update({ file_name: '__multi__', file_data: JSON.stringify(mergedFiles), file_count: mergedFiles.length }).eq('internal_id', rt.internalId);
+          if (!e3) okCount++;
+        }
+        if (okCount > 0) {
+          setTasks(prev => prev.map(t => related.some(r => r.internalId === t.internalId) ? { ...t, fileCount: (t.fileCount || 0) + uploadedNewFiles.length, filesLoaded: false } : t));
+          logAudit(sb, user, 'COMPARTIR_DOCUMENTOS', `${taskData.id} → ${okCount} técnico(s) más`);
+          pushToast(`📎 Documentos compartidos con ${okCount} técnico${okCount!==1?'s':''} más`);
+        }
+      }
+    }
     closeModal();
   };
 
@@ -929,20 +988,33 @@ function App() {
   const toggleTaskStarred = async (id) => {
     const task = tasks.find(t => t.internalId === id); if (!task) return;
     const nv = !task.starred;
-    setTasks(tasks.map(t => t.internalId === id ? { ...t, starred: nv } : t));
-    if (selectedTask?.internalId === id) setSelectedTask(prev => ({ ...prev, starred: nv }));
+    // Si ese mismo día hay más técnicos con la misma tarea (mismo ID), se marcan/desmarcan todos a la vez
+    const related = tasks.filter(t => t.id === task.id && t.date === task.date && !t.isAbsence);
+    const relatedIds = related.map(t => t.internalId);
+    setTasks(tasks.map(t => relatedIds.includes(t.internalId) ? { ...t, starred: nv } : t));
+    if (relatedIds.includes(selectedTask?.internalId)) setSelectedTask(prev => ({ ...prev, starred: nv }));
     skipNextToastRef.current = true;
-    const { error } = await sb.from('tasks').update({ starred: nv }).eq('internal_id', id);
+    const { error } = await sb.from('tasks').update({ starred: nv }).in('internal_id', relatedIds);
     if (error) { pushToast('⚠️ Falta crear la columna "starred" en Supabase'); return; }
-    logAudit(sb, user, nv ? 'MARCAR_PRIORITARIA' : 'QUITAR_PRIORITARIA', `${task.id} - ${task.customer}`);
+    logAudit(sb, user, nv ? 'MARCAR_PRIORITARIA' : 'QUITAR_PRIORITARIA', `${task.id} - ${task.customer}${relatedIds.length > 1 ? ` (${relatedIds.length} técnicos)` : ''}`);
   };
 
-  const handleDeleteTask = async (id) => {
+  const handleDeleteTask = async (id, fromTechId) => {
     const task = tasks.find(t => t.internalId === id);
+    if (!task) return;
+    if (fromTechId && task.techIds.length > 1) {
+      // Tarea compartida con varios técnicos: solo se quita a este técnico, el resto la conserva
+      const newTechIds = task.techIds.filter(tid => String(tid) !== String(fromTechId));
+      setTasks(tasks.map(t => t.internalId === id ? { ...t, techIds: newTechIds } : t));
+      skipNextToastRef.current = true;
+      await sb.from('tasks').update({ tech_ids: newTechIds }).eq('internal_id', id);
+      logAudit(sb, user, 'QUITAR_TECNICO_TAREA', `${task.id} - ${task.customer} (técnico ${fromTechId})`);
+      return;
+    }
     setTasks(tasks.filter(t => t.internalId !== id));
     skipNextToastRef.current = true;
     await sb.from('tasks').delete().eq('internal_id', id);
-    if (task) logAudit(sb, user, 'ELIMINAR_TAREA', `${task.id} - ${task.customer}`);
+    logAudit(sb, user, 'ELIMINAR_TAREA', `${task.id} - ${task.customer}`);
   };
 
   const copyTechWeek = async (techId) => {
@@ -1309,7 +1381,7 @@ function App() {
     setEditingTask(task); setFormTaskId(task.id); setFormCustomer(task.customer); setFormReference(task.reference);
     setFormInstructions(task.instructions || ''); setFormObservations(task.observations || ''); setAutoFilledFiles([]);
     setSelectedSlot({ techId: task.techIds[0], dateISO: task.date }); setTempAssignedTechs(task.techIds); setPendingFiles([]);
-    setRepeatEnabled(false); setFormJustifiedAbsence(false); setModalMode('task');
+    setRepeatEnabled(false); setFormJustifiedAbsence(false); setFormApplyToAll(false); setFormShareFiles(false); setModalMode('task');
     if (task.fileCount > 0 && !task.filesLoaded) {
       fetchTaskFiles(sb, task.internalId).then(files => {
         setEditingTask(prev => (prev && prev.internalId === task.internalId) ? { ...prev, files, filesLoaded: true } : prev);
@@ -1443,12 +1515,21 @@ function App() {
 
   // CARGA
   if (loading) return (
-    <div style={{minHeight:'100vh',background:'#0f172a',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:'24px'}}>
+    <div style={{minHeight:'100vh',background:'#0f172a',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:'24px',padding:'16px',textAlign:'center'}}>
       <div style={{marginBottom:'8px',padding:'12px 20px',background:'white',borderRadius:'12px'}}>
         <img src="logo.jpg" style={{height:'40px',objectFit:'contain'}} alt="Logo" />
       </div>
-      <div className="spinner"></div>
-      <p style={{color:'rgba(255,255,255,0.5)',fontSize:'11px',fontWeight:700,textTransform:'uppercase',letterSpacing:'3px'}}>Conectando...</p>
+      {loadTimedOut ? (
+        <>
+          <p style={{color:'#fca5a5',fontSize:'12px',fontWeight:700,maxWidth:'320px',lineHeight:1.5}}>⚠️ La conexión está tardando demasiado. Puede que tu red o alguna extensión del navegador esté bloqueando la conexión.</p>
+          <button onClick={() => loadAll()} style={{padding:'12px 24px',background:'#2563eb',color:'white',border:'none',borderRadius:'12px',fontWeight:900,fontSize:'11px',textTransform:'uppercase',letterSpacing:'1px',cursor:'pointer',display:'flex',alignItems:'center',gap:'8px'}}><RefreshCw size={14} /> Reintentar</button>
+        </>
+      ) : (
+        <>
+          <div className="spinner"></div>
+          <p style={{color:'rgba(255,255,255,0.5)',fontSize:'11px',fontWeight:700,textTransform:'uppercase',letterSpacing:'3px'}}>Conectando...</p>
+        </>
+      )}
     </div>
   );
 
@@ -1475,9 +1556,9 @@ function App() {
   // PORTAL DE TÉCNICO — al entrar como técnico, elige a qué aplicación acceder
   if ((user.role === 'tech' || user.role === 'admin') && !techPortalEntered) {
     const PORTAL_APPS = [
-      { key: 'turnos', title: 'Gestión de Turnos', desc: user.role === 'admin' ? 'Gestiona el cuadrante semanal de tareas' : 'Consulta tu cuadrante semanal de tareas', icon: <CalendarIcon size={28} color="#2563eb" />, color: '#2563eb', action: () => setTechPortalEntered(true) },
+      { key: 'turnos', title: 'Planing Semanal', desc: 'Consulta tus tareas asignadas', icon: <CalendarIcon size={28} color="#2563eb" />, color: '#2563eb', action: () => setTechPortalEntered(true) },
       { key: 'parte', title: 'Parte de Trabajo', desc: 'Registra el parte de trabajo diario', icon: <FileText size={28} color="#16a34a" />, color: '#16a34a', action: () => window.open(PARTE_TRABAJO_URL, '_blank') },
-      { key: 'obra', title: 'Gestión de Obra', desc: 'Consulta y gestiona la obra asignada', icon: <ShieldCheck size={28} color="#d97706" />, color: '#d97706', action: () => window.open(GESTION_OBRA_URL, '_blank') },
+      { key: 'obra', title: 'Informes de Obra', desc: 'Consulta tus informes de obra', icon: <ShieldCheck size={28} color="#d97706" />, color: '#d97706', action: () => window.open(GESTION_OBRA_URL, '_blank') },
     ];
     return (
       <div style={{minHeight:'100vh',background:'#0f172a',display:'flex',flexDirection:'column',alignItems:'center',padding:'40px 16px'}}>
@@ -1836,7 +1917,10 @@ function App() {
                     <div key={i} style={{display:'flex',alignItems:'center',gap:'10px',padding:'10px 12px',background:'#eff6ff',borderRadius:'10px',border:'1px solid #bfdbfe'}}>
                       <span style={{fontSize:'16px',lineHeight:1}}>{icon}</span>
                       <span style={{fontWeight:700,fontSize:'11px',color:'#1d4ed8',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{f.name}</span>
-                      {f.data && (
+                      {f.path && (
+                        <button onClick={() => window.open(getStorageFileUrl(sb, f.path), '_blank')} style={{padding:'5px 10px',background:'#2563eb',color:'white',border:'none',borderRadius:'8px',fontSize:'10px',fontWeight:900,cursor:'pointer',textTransform:'uppercase',whiteSpace:'nowrap'}}>ABRIR</button>
+                      )}
+                      {f.data && !f.path && (
                         <button onClick={() => {
                           try {
                             const base64 = f.data.split(',')[1];
@@ -1923,6 +2007,19 @@ function App() {
               <div><label className="label-form">Cliente</label><input required className="input-form" style={{textTransform:'uppercase'}} value={formCustomer} onChange={e => setFormCustomer(e.target.value.toUpperCase())} placeholder="NOMBRE" /></div>
             </div>
             <div><label className="label-form">Referencia de Obra</label><input required className="input-form" style={{textTransform:'uppercase',fontSize:'11px'}} value={formReference} onChange={e => setFormReference(e.target.value.toUpperCase())} placeholder="REFERENCIA" /></div>
+            {editingTask && (() => {
+              const otherCount = tasks.filter(t => t.id === editingTask.id && t.internalId !== editingTask.internalId && !t.isAbsence).length;
+              if (otherCount === 0) return null;
+              return (
+                <div style={{background:formApplyToAll?'#eff6ff':'#f8fafc',padding:'10px 12px',borderRadius:'10px',border:formApplyToAll?'1px solid #93c5fd':'1px solid #e2e8f0'}}>
+                  <label style={{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer'}}>
+                    <input type="checkbox" checked={formApplyToAll} onChange={e => setFormApplyToAll(e.target.checked)} />
+                    <span style={{fontSize:'11px',fontWeight:700,color:formApplyToAll?'#1d4ed8':'#475569'}}>Aplicar el ID, Cliente y Referencia a los otros {otherCount} técnico{otherCount!==1?'s':''} con esta misma tarea</span>
+                  </label>
+                  <p style={{fontSize:'9px',color:'#94a3b8',marginTop:'4px',marginLeft:'22px'}}>No afecta a instrucciones, observaciones ni archivos adjuntos de cada uno.</p>
+                </div>
+              );
+            })()}
             <div><label className="label-form">Observaciones</label><textarea className="input-form" value={formObservations} onChange={e => setFormObservations(e.target.value)} placeholder="Notas internas visibles al pasar el ratón por la tarjeta..." style={{height:'56px',resize:'none'}} /></div>
             <div style={{position:'relative'}}>
               <label className="label-form">Asignado a:</label>
@@ -1998,6 +2095,19 @@ function App() {
                 e.target.value = '';
               }} style={{display:'block',width:'100%',fontSize:'11px',color:'#64748b',marginTop:'4px'}} />
               <p style={{fontSize:'9px',color:'#94a3b8',marginTop:'3px'}}>PDF, Word, Excel, imágenes, etc. Puedes añadir varios a la vez. Las imágenes se comprimen automáticamente; otros archivos de más de 5 MB darán aviso.</p>
+              {pendingFiles.length > 0 && (() => {
+                const otherCount = tasks.filter(t => t.id === formTaskId && t.internalId !== editingTask?.internalId && !t.isAbsence).length;
+                if (otherCount === 0) return null;
+                return (
+                  <div style={{background:formShareFiles?'#eff6ff':'#f8fafc',padding:'10px 12px',borderRadius:'10px',border:formShareFiles?'1px solid #93c5fd':'1px solid #e2e8f0',marginTop:'8px'}}>
+                    <label style={{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer'}}>
+                      <input type="checkbox" checked={formShareFiles} onChange={e => setFormShareFiles(e.target.checked)} />
+                      <span style={{fontSize:'11px',fontWeight:700,color:formShareFiles?'#1d4ed8':'#475569'}}>Compartir estos documentos con los otros {otherCount} técnico{otherCount!==1?'s':''} con esta misma tarea</span>
+                    </label>
+                    <p style={{fontSize:'9px',color:'#94a3b8',marginTop:'4px',marginLeft:'22px'}}>No se duplica el archivo, solo se comparte el enlace: ocupa el mismo espacio.</p>
+                  </div>
+                );
+              })()}
               {/* Existing saved files (al editar una tarea ya existente) */}
               {editingTask?.fileCount > 0 && !editingTask?.filesLoaded && (
                 <p style={{fontSize:'9px',color:'#94a3b8',marginTop:'8px'}}>Cargando archivos guardados...</p>
