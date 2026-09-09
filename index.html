@@ -339,7 +339,7 @@ function TaskCard({ task, highlight, isAdmin, compact, draggable, selectionMode,
   const isJustifiedAbsence = task.id === 'AUSENCIA JUSTIFICADA';
   const isVacaciones = task.isAbsence && task.id === 'VACACIONES';
   const isOtherAbsence = task.isAbsence && !isVacaciones;
-  const absenceTextColor = isVacaciones ? '#15803d' : isOtherAbsence ? '#1e3a8a' : undefined;
+  const absenceTextColor = isVacaciones ? '#15803d' : isOtherAbsence ? '#92400e' : undefined;
   const bg = selected ? '#dbeafe' : highlight ? '#ccff00'
     : task.isAbsence ? 'white'
     : isJustifiedAbsence ? 'white'
@@ -347,7 +347,7 @@ function TaskCard({ task, highlight, isAdmin, compact, draggable, selectionMode,
     : task.starred ? '#f3e8ff'
     : 'white';
   const border = selected ? '#2563eb' : dragOver ? '#2563eb' : highlight ? '#99cc00'
-    : isVacaciones ? '#86efac' : isOtherAbsence ? '#93c5fd'
+    : isVacaciones ? '#86efac' : isOtherAbsence ? '#fcd34d'
     : isJustifiedAbsence ? '#c4b5fd'
     : task.completed ? '#86efac'
     : task.starred ? '#d8b4fe'
@@ -1794,9 +1794,9 @@ function App() {
                       const mIsVacaciones = task.isAbsence && task.id === 'VACACIONES';
                       const mIsOtherAbsence = task.isAbsence && !mIsVacaciones;
                       const mIsJustified = task.id === 'AUSENCIA JUSTIFICADA';
-                      const mBorder = mIsVacaciones ? '#86efac' : mIsOtherAbsence ? '#93c5fd' : mIsJustified ? '#c4b5fd' : task.completed ? '#86efac' : task.starred ? '#d8b4fe' : '#bfdbfe';
+                      const mBorder = mIsVacaciones ? '#86efac' : mIsOtherAbsence ? '#fcd34d' : mIsJustified ? '#c4b5fd' : task.completed ? '#86efac' : task.starred ? '#d8b4fe' : '#bfdbfe';
                       const mBg = task.isAbsence ? 'white' : mIsJustified ? 'white' : task.completed ? '#dcfce7' : task.starred ? '#f3e8ff' : '#eff6ff';
-                      const mText = mIsVacaciones ? '#15803d' : mIsOtherAbsence ? '#1e3a8a' : mIsJustified ? '#7c3aed' : undefined;
+                      const mText = mIsVacaciones ? '#15803d' : mIsOtherAbsence ? '#92400e' : mIsJustified ? '#7c3aed' : undefined;
                       return (
                       <div key={task.internalId} onClick={() => openTaskView(task)}
                         style={{padding:'12px',borderRadius:'12px',border:`1.5px solid ${mBorder}`,background:mBg,cursor:'pointer'}}>
