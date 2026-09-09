@@ -400,7 +400,7 @@ function TaskCard({ task, highlight, isAdmin, compact, draggable, selectionMode,
         </div>
       )}
       <div style={{width:'100%'}}>
-        <div style={{fontWeight:900,color:textColor||'#1e293b',textTransform:'uppercase',fontSize:compact?'11px':'12px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',paddingRight: hover ? '52px' : '0'}}>{task.isAbsence ? task.id : `${isJustifiedAbsence ? 'AUSENCIA' : task.id} - ${task.customer}`}</div>
+        <div style={{fontWeight:900,color:textColor||'#1e293b',textTransform:'uppercase',fontSize:compact?'11px':'12px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',paddingRight: hover ? '52px' : '0'}}>{task.isAbsence ? task.id : (<>{isJustifiedAbsence ? 'AUSENCIA' : task.id}<span style={{margin:'0 6px',opacity:0.5}}>@</span>{task.customer}</>)}</div>
         {!task.isAbsence && <div style={{fontSize:compact?'10px':'11px',fontWeight:700,color:textColor||'#475569',textTransform:'uppercase',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',lineHeight:1,paddingRight: hover ? '52px' : '0'}}>{task.reference}</div>}
         {!isAdmin && !task.isAbsence && (task.instructions || task.fileCount > 0) && (
           <div style={{display:'flex',gap:'4px',marginTop:'3px',flexWrap:'wrap'}}>
@@ -1800,7 +1800,7 @@ function App() {
                       return (
                       <div key={task.internalId} onClick={() => openTaskView(task)}
                         style={{padding:'12px',borderRadius:'12px',border:`1.5px solid ${mBorder}`,background:mBg,cursor:'pointer'}}>
-                        <div style={{fontWeight:900,fontSize:'13px',color:mText||'#1e293b',textTransform:'uppercase'}}>{task.isAbsence ? task.id : `${mIsJustified ? 'AUSENCIA' : task.id} - ${task.customer}`}</div>
+                        <div style={{fontWeight:900,fontSize:'13px',color:mText||'#1e293b',textTransform:'uppercase'}}>{task.isAbsence ? task.id : (<>{mIsJustified ? 'AUSENCIA' : task.id}<span style={{margin:'0 6px',opacity:0.5}}>@</span>{task.customer}</>)}</div>
                         {!task.isAbsence && <div style={{fontSize:'12px',color:mText||'#475569',fontWeight:700,textTransform:'uppercase',marginTop:'2px'}}>{task.reference}</div>}
                         {!task.isAbsence && (task.instructions || task.fileCount > 0) && (
                           <div style={{display:'flex',gap:'6px',marginTop:'6px',flexWrap:'wrap'}}>
