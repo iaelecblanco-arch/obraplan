@@ -147,11 +147,12 @@ const ensureFilesLoaded = async (sbClient, taskList) => {
     return { ...t, files, filesLoaded: true };
   }));
 };
-const logAudit = async (sbClient, user, action, detail) => {
+const logAudit = async (sbClient, user, action, detail, extra = {}) => {
   try {
     await sbClient.from('audit_log').insert({
       actor: user ? `${user.name} ${user.surname}` : 'Desconocido',
-      action, detail, created_at: new Date().toISOString()
+      action, detail, created_at: new Date().toISOString(),
+      tech_id: extra.techId ?? null, task_date: extra.date ?? null,
     });
   } catch (e) { /* tabla opcional: si no existe, se ignora silenciosamente */ }
 };
@@ -413,7 +414,7 @@ function TaskCard({ task, highlight, isAdmin, compact, draggable, selectionMode,
   );
 }
 
-function CellHover({ children, isH, isAdmin, clipboard, onNew, onPaste, canCopyDay, canPasteDay, onCopyDay, onPasteDay, selectionMode, className }) {
+function CellHover({ children, isH, isAdmin, clipboard, onNew, onPaste, canCopyDay, canPasteDay, onCopyDay, onPasteDay, onViewHistory, selectionMode, className }) {
   const [hover, setHover] = useState(false);
   return (
     <td className={className} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
@@ -426,6 +427,7 @@ function CellHover({ children, isH, isAdmin, clipboard, onNew, onPaste, canCopyD
             {clipboard && <button onClick={onPaste} style={{flex:1,padding:'4px',background:'#2563eb',borderRadius:'6px',color:'white',fontWeight:900,fontSize:'9px',textTransform:'uppercase',border:'none',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'4px'}}><ClipboardPaste size={10} color="white" /> PEGAR</button>}
             {canCopyDay && <button onClick={onCopyDay} title="Copiar día completo a otro técnico" style={{padding:'4px 6px',border:'1px solid #cbd5e1',borderRadius:'6px',background:'none',cursor:'pointer',color:'#94a3b8',display:'flex',alignItems:'center'}}><CopyPlus size={10} /></button>}
             {canPasteDay && <button onClick={onPasteDay} title="Pegar día completo aquí" style={{padding:'4px 6px',background:'#16a34a',borderRadius:'6px',border:'none',cursor:'pointer',color:'white',display:'flex',alignItems:'center'}}><ClipboardPaste size={10} color="white" /></button>}
+            <button onClick={onViewHistory} title="Ver historial de este técnico este día" style={{padding:'4px 6px',border:'1px solid #cbd5e1',borderRadius:'6px',background:'none',cursor:'pointer',color:'#7c3aed',display:'flex',alignItems:'center'}}><FileText size={10} /></button>
           </div>
         )}
       </div>
@@ -451,7 +453,7 @@ function ThDay({ date, idx, isH, todayISO, tasks, techs, stickyTop, showWeekLabe
   );
 }
 
-function TechRow({ t, columnLayout, holidays, tasks, isAdmin, techWeekClipboard, clipboard, searchTerm, compact, dayClipboard, selectionMode, selectedIds, printHidden, onNewTask, onPasteTask, onEditTask, onCopyTask, onDeleteTask, onToggleCompleted, onToggleStar, onViewTask, onCopyTechWeek, onPasteTechWeek, onPasteTechWeekAt, onDuplicateNextWeek, onCopyDay, onPasteDay, onReorderDay, onToggleSelect }) {
+function TechRow({ t, columnLayout, holidays, tasks, isAdmin, techWeekClipboard, clipboard, searchTerm, compact, dayClipboard, selectionMode, selectedIds, printHidden, onNewTask, onPasteTask, onEditTask, onCopyTask, onDeleteTask, onToggleCompleted, onToggleStar, onViewTask, onCopyTechWeek, onPasteTechWeek, onPasteTechWeekAt, onDuplicateNextWeek, onCopyDay, onPasteDay, onReorderDay, onToggleSelect, onViewHistory }) {
   const [hovering, setHovering] = useState(false);
   const shiftColor = t.shiftType==='INTENSIVA'?'#16a34a':'#2563eb';
   return (
@@ -496,7 +498,7 @@ function TechRow({ t, columnLayout, holidays, tasks, isAdmin, techWeekClipboard,
           <CellHover key={idx} isH={isH} isAdmin={isAdmin} clipboard={clipboard} className={idx >= 5 ? 'no-print-extra-week' : undefined}
             onNew={() => onNewTask(t.id, date)} onPaste={() => onPasteTask(t.id, dISO)}
             canCopyDay={canCopyDay} canPasteDay={canPasteDay}
-            onCopyDay={() => onCopyDay(t.id, dISO)} onPasteDay={() => onPasteDay(t.id, dISO)} selectionMode={selectionMode}>
+            onCopyDay={() => onCopyDay(t.id, dISO)} onPasteDay={() => onPasteDay(t.id, dISO)} onViewHistory={() => onViewHistory(t.id, dISO)} selectionMode={selectionMode}>
             {isEmpty ? (
               <div style={{display:'flex',alignItems:'center',justifyContent:'center',padding:'16px',color:'#dc2626',fontWeight:900,fontSize:'10px',textTransform:'uppercase',textAlign:'center'}}>
                 <span className="animate-pulse">SIN TAREA ASIGNADA</span>
@@ -955,7 +957,7 @@ function App() {
     }
     setSaving(false);
     if (err) { alert('Error al guardar tarea: ' + err.message); return; }
-    logAudit(sb, user, editingTask ? 'EDITAR_TAREA' : 'CREAR_TAREA', `${taskData.id} - ${taskData.customer}${repeatEnabled && !editingTask ? ' (recurrente)' : ''}`);
+    logAudit(sb, user, editingTask ? 'EDITAR_TAREA' : 'CREAR_TAREA', `${taskData.id} - ${taskData.customer}${repeatEnabled && !editingTask ? ' (recurrente)' : ''}`, { techId: taskData.techIds[0], date: taskData.date });
     // Compartir los documentos recién subidos con el resto de técnicos que tengan esta misma tarea
     if (formShareFiles && uploadedNewFiles.length > 0) {
       const related = tasks.filter(t => t.id === taskData.id && t.internalId !== taskInternalId && !t.isAbsence);
@@ -984,7 +986,7 @@ function App() {
     if (selectedTask?.internalId === id) setSelectedTask(prev => ({ ...prev, completed: nv }));
     skipNextToastRef.current = true;
     await sb.from('tasks').update({ completed: nv }).eq('internal_id', id);
-    logAudit(sb, user, nv ? 'COMPLETAR_TAREA' : 'REABRIR_TAREA', `${task.id} - ${task.customer}`);
+    logAudit(sb, user, nv ? 'COMPLETAR_TAREA' : 'REABRIR_TAREA', `${task.id} - ${task.customer}`, { techId: task.techIds[0], date: task.date });
   };
 
   const toggleTaskStarred = async (id) => {
@@ -998,7 +1000,7 @@ function App() {
     skipNextToastRef.current = true;
     const { error } = await sb.from('tasks').update({ starred: nv }).in('internal_id', relatedIds);
     if (error) { pushToast('⚠️ Falta crear la columna "starred" en Supabase'); return; }
-    logAudit(sb, user, nv ? 'MARCAR_PRIORITARIA' : 'QUITAR_PRIORITARIA', `${task.id} - ${task.customer}${relatedIds.length > 1 ? ` (${relatedIds.length} técnicos)` : ''}`);
+    logAudit(sb, user, nv ? 'MARCAR_PRIORITARIA' : 'QUITAR_PRIORITARIA', `${task.id} - ${task.customer}${relatedIds.length > 1 ? ` (${relatedIds.length} técnicos)` : ''}`, { techId: task.techIds[0], date: task.date });
   };
 
   const handleDeleteTask = async (id, fromTechId) => {
@@ -1011,7 +1013,7 @@ function App() {
       setTasks(tasks.map(t => t.internalId === id ? { ...t, techIds: newTechIds } : t));
       skipNextToastRef.current = true;
       await sb.from('tasks').update({ tech_ids: newTechIds }).eq('internal_id', id);
-      logAudit(sb, user, 'QUITAR_TECNICO_TAREA', `${task.id} - ${task.customer} (técnico ${fromTechId})`);
+      logAudit(sb, user, 'QUITAR_TECNICO_TAREA', `${task.id} - ${task.customer} (técnico ${fromTechId})`, { techId: fromTechId, date: task.date });
       return;
     }
     if (!window.confirm(`¿Eliminar "${task.id} - ${task.customer}"?\n\nPodrás recuperarla desde la Papelera durante 30 días.`)) return;
@@ -1019,7 +1021,7 @@ function App() {
     setTasks(tasks.filter(t => t.internalId !== id));
     skipNextToastRef.current = true;
     await sb.from('tasks').update({ deleted_at: new Date().toISOString() }).eq('internal_id', id);
-    logAudit(sb, user, 'ELIMINAR_TAREA', `${task.id} - ${task.customer}`);
+    logAudit(sb, user, 'ELIMINAR_TAREA', `${task.id} - ${task.customer}`, { techId: task.techIds[0], date: task.date });
   };
 
   const copyTechWeek = async (techId) => {
@@ -1084,7 +1086,7 @@ function App() {
     skipNextToastRef.current = true;
     const { error } = await sb.from('tasks').insert(newTasks.map(localTaskToDB));
     if (error) { alert('Error al pegar: ' + error.message); setDayClipboard(null); return; }
-    logAudit(sb, user, pastingAbsence ? 'PEGAR_AUSENCIA_DIA' : 'PEGAR_DIA_COMPLETO', `${newTasks.length} → técnico ${targetTechId} (${dateISO})`);
+    logAudit(sb, user, pastingAbsence ? 'PEGAR_AUSENCIA_DIA' : 'PEGAR_DIA_COMPLETO', `${newTasks.length} → técnico ${targetTechId} (${dateISO})`, { techId: targetTechId, date: dateISO });
     pushToast(pastingAbsence ? '✅ Ausencia pegada' : '✅ Día completo pegado');
     setDayClipboard(null);
   };
@@ -1105,7 +1107,7 @@ function App() {
       return idx >= 0 ? { ...t, taskOrder: idx } : t;
     }));
     await Promise.all(reordered.map((t, i) => sb.from('tasks').update({ task_order: i }).eq('internal_id', t.internalId)));
-    logAudit(sb, user, 'REORDENAR_TAREAS_DIA', `${reordered.length} tareas (${dateISO})`);
+    logAudit(sb, user, 'REORDENAR_TAREAS_DIA', `${reordered.length} tareas (${dateISO})`, { techId, date: dateISO });
   };
 
   const toggleSelectionMode = () => {
@@ -1276,20 +1278,22 @@ function App() {
   };
 
   const restoreTrashItem = async (internalId) => {
+    const item = trashItems.find(t => t.internal_id === internalId);
     const { error } = await sb.from('tasks').update({ deleted_at: null }).eq('internal_id', internalId);
     if (error) { alert('Error al restaurar: ' + error.message); return; }
     setTrashItems(prev => prev.filter(t => t.internal_id !== internalId));
-    logAudit(sb, user, 'RESTAURAR_TAREA', `internal_id ${internalId}`);
+    logAudit(sb, user, 'RESTAURAR_TAREA', item ? `${item.id} - ${item.customer}` : `internal_id ${internalId}`, { techId: item?.tech_ids?.[0], date: item?.date });
     pushToast('♻️ Tarea restaurada');
     loadAll(true);
   };
 
   const deleteTrashItemForever = async (internalId, label) => {
     if (!window.confirm(`¿Eliminar definitivamente "${label}"? Esto ya no se puede deshacer.`)) return;
+    const item = trashItems.find(t => t.internal_id === internalId);
     const { error } = await sb.from('tasks').delete().eq('internal_id', internalId);
     if (error) { alert('Error: ' + error.message); return; }
     setTrashItems(prev => prev.filter(t => t.internal_id !== internalId));
-    logAudit(sb, user, 'ELIMINAR_DEFINITIVO', label);
+    logAudit(sb, user, 'ELIMINAR_DEFINITIVO', label, { techId: item?.tech_ids?.[0], date: item?.date });
   };
 
   const emptyTrash = async () => {
@@ -1308,18 +1312,33 @@ function App() {
     sb.from('tasks').delete().not('deleted_at', 'is', null).lt('deleted_at', thirtyDaysAgo).then(() => {});
   }, [isAdmin]);
 
-  const loadAuditLog = async (days) => {
+  const [auditFilter, setAuditFilter] = useState(null); // { techId, date } o null (sin filtro)
+
+  const loadAuditLog = async (days, filter = null) => {
     setAuditLoading(true);
-    const since = new Date(Date.now() - days * 86400000).toISOString();
-    const { data, error } = await sb.from('audit_log').select('*').gte('created_at', since).order('created_at', { ascending: false }).limit(500);
+    let q = sb.from('audit_log').select('*').order('created_at', { ascending: false }).limit(500);
+    if (filter) {
+      q = q.eq('tech_id', filter.techId).eq('task_date', filter.date);
+    } else {
+      const since = new Date(Date.now() - days * 86400000).toISOString();
+      q = q.gte('created_at', since);
+    }
+    const { data, error } = await q;
     setAuditLog(error ? [] : (data || []));
     setAuditLoading(false);
   };
 
   const openAuditLog = async () => {
-    setModalMode('audit'); setAuditDaysRange(7);
+    setModalMode('audit'); setAuditDaysRange(7); setAuditFilter(null);
     loadAuditLog(7);
   };
+
+  const openAuditLogForCell = async (techId, dateISO) => {
+    setModalMode('audit'); setAuditFilter({ techId, date: dateISO });
+    loadAuditLog(null, { techId, date: dateISO });
+  };
+
+  const clearAuditFilter = () => { setAuditFilter(null); loadAuditLog(auditDaysRange); };
 
 
   const exportToExcel = () => {
@@ -1491,7 +1510,7 @@ function App() {
     }
     skipNextToastRef.current = true;
     await sb.from('tasks').insert(localTaskToDB({ ...clipboard, internalId: newId(), date: dateISO, techIds: [techId] }));
-    logAudit(sb, user, 'PEGAR_TAREA', `${clipboard.id} - ${clipboard.customer}`);
+    logAudit(sb, user, 'PEGAR_TAREA', `${clipboard.id} - ${clipboard.customer}`, { techId, date: dateISO });
   };
 
   const handleAddHoliday = async (e) => {
@@ -1939,7 +1958,7 @@ function App() {
                   onCopyTask={handleCopyTask} onDeleteTask={handleDeleteTask} onToggleCompleted={toggleTaskCompleted} onToggleStar={toggleTaskStarred}
                   onViewTask={openTaskView}
                   onCopyTechWeek={copyTechWeek} onPasteTechWeek={pasteTechWeek} onPasteTechWeekAt={pasteTechWeekAtSeparator} onDuplicateNextWeek={duplicateTechToNextWeek}
-                  onCopyDay={copyDay} onPasteDay={pasteDay} onReorderDay={reorderDayTasks} onToggleSelect={toggleSelectTask} />
+                  onCopyDay={copyDay} onPasteDay={pasteDay} onReorderDay={reorderDayTasks} onToggleSelect={toggleSelectTask} onViewHistory={openAuditLogForCell} />
               ))}
             </tbody>
           </table>
@@ -2405,16 +2424,25 @@ function App() {
             <h3 style={{fontWeight:900,color:'#1e293b',textTransform:'uppercase',letterSpacing:'2px',fontSize:'12px',margin:0}}>Historial de Cambios</h3>
             <button onClick={closeModal} style={{background:'none',border:'none',cursor:'pointer'}}><X size={18} /></button>
           </div>
-          <div style={{padding:'12px 16px',borderBottom:'1px solid #f1f5f9',display:'flex',gap:'6px'}}>
-            {[7, 14, 30].map(d => (
-              <button key={d} onClick={() => { setAuditDaysRange(d); loadAuditLog(d); }} style={{padding:'6px 14px',borderRadius:'8px',border:auditDaysRange===d?'1px solid #2563eb':'1px solid #e2e8f0',background:auditDaysRange===d?'#eff6ff':'white',color:auditDaysRange===d?'#1d4ed8':'#64748b',fontSize:'10px',fontWeight:900,textTransform:'uppercase',cursor:'pointer'}}>Últimos {d} días</button>
-            ))}
-          </div>
+          {auditFilter ? (
+            <div style={{padding:'10px 16px',borderBottom:'1px solid #f1f5f9',display:'flex',alignItems:'center',justifyContent:'space-between',background:'#f5f3ff'}}>
+              <span style={{fontSize:'10px',fontWeight:900,color:'#7c3aed',textTransform:'uppercase'}}>
+                Filtrado: {techs.find(x => String(x.id) === String(auditFilter.techId))?.name || 'Técnico'} · {auditFilter.date}
+              </span>
+              <button onClick={clearAuditFilter} style={{padding:'5px 10px',borderRadius:'8px',border:'1px solid #ddd6fe',background:'white',color:'#7c3aed',fontSize:'9px',fontWeight:900,textTransform:'uppercase',cursor:'pointer'}}>Quitar filtro</button>
+            </div>
+          ) : (
+            <div style={{padding:'12px 16px',borderBottom:'1px solid #f1f5f9',display:'flex',gap:'6px'}}>
+              {[7, 14, 30].map(d => (
+                <button key={d} onClick={() => { setAuditDaysRange(d); loadAuditLog(d); }} style={{padding:'6px 14px',borderRadius:'8px',border:auditDaysRange===d?'1px solid #2563eb':'1px solid #e2e8f0',background:auditDaysRange===d?'#eff6ff':'white',color:auditDaysRange===d?'#1d4ed8':'#64748b',fontSize:'10px',fontWeight:900,textTransform:'uppercase',cursor:'pointer'}}>Últimos {d} días</button>
+              ))}
+            </div>
+          )}
           <div style={{padding:'16px',maxHeight:'440px',overflowY:'auto'}}>
             {auditLoading && <p style={{fontSize:'11px',color:'#94a3b8',textAlign:'center',padding:'16px'}}>Cargando...</p>}
             {!auditLoading && auditLog.length === 0 && (
               <p style={{fontSize:'11px',color:'#94a3b8',textAlign:'center',padding:'16px',lineHeight:1.6}}>
-                No hay registros en los últimos {auditDaysRange} días.<br/>Si es la primera vez, es posible que falte crear la tabla <code>audit_log</code> en Supabase (consulta las instrucciones que te he dado).
+                {auditFilter ? 'No hay registros para este técnico ese día.' : <>No hay registros en los últimos {auditDaysRange} días.<br/>Si es la primera vez, es posible que falte crear la tabla <code>audit_log</code> en Supabase (consulta las instrucciones que te he dado).</>}
               </p>
             )}
             {!auditLoading && auditLog.map((a, i) => (
