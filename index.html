@@ -199,7 +199,19 @@ const uploadFileToStorage = async (sbClient, file, taskInternalId) => {
   return { name: file.name, path };
 };
 const getStorageFileUrl = (sbClient, path) => sbClient.storage.from(TASK_FILES_BUCKET).getPublicUrl(path).data.publicUrl;
-const dbTechToLocal = (t) => ({ id: t.id, name: t.name, surname: t.surname, username: t.username, role: t.role, shiftType: t.shift_type, sortOrder: t.sort_order ?? 999 });
+const dbTechToLocal = (t) => ({ id: t.id, name: t.name, surname: t.surname, username: t.username, password: t.password, role: t.role, shiftType: t.shift_type, sortOrder: t.sort_order ?? 999 });
+
+// --- Seguridad: hash de contraseñas (SHA-256 + salt del propio usuario) ---
+// No sustituye a un backend real, pero evita que las contraseñas viajen y se
+// guarden en texto plano en Supabase. Compatible con cuentas antiguas: si el
+// hash no coincide, comprueba si coincide en texto plano y migra al vuelo.
+const hashPassword = async (username, plainPassword) => {
+  const enc = new TextEncoder();
+  const data = enc.encode(`obraplan_salt::${username.toLowerCase()}::${plainPassword}`);
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
+};
+const looksHashed = (str) => typeof str === 'string' && /^[a-f0-9]{64}$/.test(str);
 
 // --- SVG Icons ---
 const ChevronLeft = (p) => <svg xmlns="http://www.w3.org/2000/svg" width={p.size||16} height={p.size||16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>;
@@ -705,8 +717,8 @@ function App() {
     ]);
     try {
       const [{ data: td, error: e1 }, { data: ad, error: e2 }, { data: hd, error: e3 }, { data: tkd, error: e4 }] = await withTimeout(Promise.all([
-        sb.from('techs_public').select('*').order('sort_order', { ascending: true }).order('id'),
-        sb.from('admins_public').select('*').order('id'),
+        sb.from('techs').select('*').order('sort_order', { ascending: true }).order('id'),
+        sb.from('admins').select('*').order('id'),
         sb.from('holidays').select('*'),
         sb.from('tasks').select('internal_id, id, customer, reference, instructions, observations, date, tech_ids, completed, is_absence, hours, task_order, starred, file_count').is('deleted_at', null),
       ]), 15000);
@@ -772,13 +784,13 @@ function App() {
         notify('📋 Tareas actualizadas por otro usuario');
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'techs' }, () => {
-        sb.from('techs_public').select('*').order('sort_order', { ascending: true }).order('id').then(({ data }) => { if (data) { setTechs(data.map(dbTechToLocal)); notify('👥 Lista de técnicos actualizada'); } });
+        sb.from('techs').select('*').order('sort_order', { ascending: true }).order('id').then(({ data }) => { if (data) { setTechs(data.map(dbTechToLocal)); notify('👥 Lista de técnicos actualizada'); } });
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'holidays' }, () => {
         sb.from('holidays').select('*').then(({ data }) => { if (data) { setHolidays(data.map(h => h.date)); notify('📅 Festivos actualizados'); } });
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'admins' }, () => {
-        sb.from('admins_public').select('*').then(({ data }) => { if (data) { setAdmins(data); notify('🛡️ Administradores actualizados'); } });
+        sb.from('admins').select('*').then(({ data }) => { if (data) { setAdmins(data); notify('🛡️ Administradores actualizados'); } });
       })
       .subscribe();
     return () => sb.removeChannel(ch);
@@ -787,15 +799,23 @@ function App() {
   const handleLogin = async (e) => {
     e.preventDefault();
     const u = e.target.username.value, p = e.target.password.value;
-    const { data, error } = await sb.rpc('handle_login', { p_username: u, p_password: p });
-    if (error) { setLoginError('Error de conexión. Inténtalo de nuevo. (' + error.message + ')'); return; }
-    const found = Array.isArray(data) ? data[0] : data;
-    if (found && found.id != null) {
-      setUser({ id: found.id, name: found.name, surname: found.surname, username: found.username, role: found.role, shiftType: found.shift_type });
-      setLoginError("");
-    } else {
-      setLoginError("Usuario o contraseña incorrectos");
-    }
+    const hashedInput = await hashPassword(u, p);
+    const tryMatch = async (list, table) => {
+      const found = list.find(a => a.username === u);
+      if (!found) return null;
+      if (found.password === hashedInput) return found; // ya migrado
+      if (!looksHashed(found.password) && found.password === p) {
+        // Cuenta antigua en texto plano: coincide -> migrar silenciosamente a hash
+        await sb.from(table).update({ password: hashedInput }).eq('id', found.id);
+        return { ...found, password: hashedInput };
+      }
+      return null;
+    };
+    const fa = await tryMatch(admins, 'admins');
+    if (fa) { setUser(fa); setLoginError(""); return; }
+    const ft = await tryMatch(techs, 'techs');
+    if (ft) { setUser(ft); setLoginError(""); return; }
+    setLoginError("Usuario o contraseña incorrectos");
   };
 
   const singleWeekDates = useMemo(() => Array.from({ length: 5 }, (_, i) => { const d = new Date(currentMonday); d.setDate(currentMonday.getDate() + i); return d; }), [currentMonday]);
@@ -1495,17 +1515,12 @@ function App() {
     const formSurname = e.target.userSurname.value.toUpperCase();
     const formUsername = e.target.userUsername.value;
     const formPasswordRaw = e.target.userPassword.value;
+    // Si se edita y se deja el campo en blanco, se conserva la contraseña actual (ya hasheada)
+    const passwordToSave = formPasswordRaw
+      ? await hashPassword(formUsername, formPasswordRaw)
+      : (editingUser?.password || '');
     if (!editingUser && !formPasswordRaw) { alert('La contraseña es obligatoria para un usuario nuevo.'); setSaving(false); return; }
-    // La contraseña se hashea DENTRO de Supabase (bcrypt) — el navegador nunca guarda ni envía el hash final
-    let hashedPassword = null;
-    if (formPasswordRaw) {
-      const { data: hashData, error: hashErr } = await sb.rpc('hash_password', { p_password: formPasswordRaw });
-      if (hashErr) { alert('Error al preparar la contraseña: ' + hashErr.message); setSaving(false); return; }
-      hashedPassword = hashData;
-    }
-    // Si se edita y se deja el campo en blanco, no se incluye "password" y así no se toca la ya guardada
-    const data = { id: editingUser?.id || newSmallId(), name: formName, surname: formSurname, username: formUsername, role: userFormRole };
-    if (hashedPassword) data.password = hashedPassword;
+    const data = { id: editingUser?.id || newSmallId(), name: formName, surname: formSurname, username: formUsername, password: passwordToSave, role: userFormRole };
     let error = null;
     if (userFormRole === 'tech') {
       const td = { ...data, shift_type: e.target.shiftType ? e.target.shiftType.value : 'NORMAL' };
