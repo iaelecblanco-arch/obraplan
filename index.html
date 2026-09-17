@@ -102,7 +102,7 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // ─── URLs del portal de técnico (cambia estos dos valores por las direcciones reales) ───
-const PARTE_TRABAJO_URL = 'https://script.google.com/macros/s/AKfycbyX6jmuPLRLnFlNBiikW9cj2k4wharsF6MHumnNMAjDD6yr9US1PFDue9Z5RaDkjcgf8Q/exec';
+const PARTE_TRABAJO_URL = 'https://script.google.com/macros/s/AKfycbwiexk4q8p7u348sPXlSSEs4yJOeCDu9QQhLAu1WOhx6tz-ibUykeWR-nc96pz3XBRJyg/exec';
 const GESTION_OBRA_URL = 'https://eblancocloud.uk/';
 
 // --- Helpers DB ---
@@ -199,19 +199,7 @@ const uploadFileToStorage = async (sbClient, file, taskInternalId) => {
   return { name: file.name, path };
 };
 const getStorageFileUrl = (sbClient, path) => sbClient.storage.from(TASK_FILES_BUCKET).getPublicUrl(path).data.publicUrl;
-const dbTechToLocal = (t) => ({ id: t.id, name: t.name, surname: t.surname, username: t.username, password: t.password, role: t.role, shiftType: t.shift_type, sortOrder: t.sort_order ?? 999 });
-
-// --- Seguridad: hash de contraseñas (SHA-256 + salt del propio usuario) ---
-// No sustituye a un backend real, pero evita que las contraseñas viajen y se
-// guarden en texto plano en Supabase. Compatible con cuentas antiguas: si el
-// hash no coincide, comprueba si coincide en texto plano y migra al vuelo.
-const hashPassword = async (username, plainPassword) => {
-  const enc = new TextEncoder();
-  const data = enc.encode(`obraplan_salt::${username.toLowerCase()}::${plainPassword}`);
-  const digest = await crypto.subtle.digest('SHA-256', data);
-  return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
-};
-const looksHashed = (str) => typeof str === 'string' && /^[a-f0-9]{64}$/.test(str);
+const dbTechToLocal = (t) => ({ id: t.id, name: t.name, surname: t.surname, username: t.username, role: t.role, shiftType: t.shift_type, sortOrder: t.sort_order ?? 999 });
 
 // --- SVG Icons ---
 const ChevronLeft = (p) => <svg xmlns="http://www.w3.org/2000/svg" width={p.size||16} height={p.size||16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>;
@@ -716,10 +704,10 @@ function App() {
     ]);
     try {
       const [{ data: td, error: e1 }, { data: ad, error: e2 }, { data: hd, error: e3 }, { data: tkd, error: e4 }] = await withTimeout(Promise.all([
-        sb.from('techs').select('*').order('sort_order', { ascending: true }).order('id'),
-        sb.from('admins').select('*').order('id'),
+        sb.from('techs_public').select('*').order('sort_order', { ascending: true }).order('id'),
+        sb.from('admins_public').select('*').order('id'),
         sb.from('holidays').select('*'),
-        sb.from('tasks').select('internal_id, id, customer, reference, instructions, observations, date, tech_ids, completed, is_absence, hours, task_order, starred, file_count'),
+        sb.from('tasks').select('internal_id, id, customer, reference, instructions, observations, date, tech_ids, completed, is_absence, hours, task_order, starred, file_count').is('deleted_at', null),
       ]), 15000);
       if (e1 || e2 || e3 || e4) throw (e1 || e2 || e3 || e4);
       const newTechs = (td || []).map(dbTechToLocal);
@@ -770,8 +758,9 @@ function App() {
     const notify = (msg) => { if (skipNextToastRef.current) { skipNextToastRef.current = false; return; } pushToast(msg); };
     const ch = sb.channel('obraplan-rt')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, (payload) => {
-        if (payload.eventType === 'DELETE') {
-          setTasks(prev => prev.filter(t => t.internalId !== payload.old.internal_id));
+        if (payload.eventType === 'DELETE' || (payload.new && payload.new.deleted_at)) {
+          const removedId = payload.eventType === 'DELETE' ? payload.old.internal_id : payload.new.internal_id;
+          setTasks(prev => prev.filter(t => t.internalId !== removedId));
         } else {
           const updated = dbTaskToLocal(payload.new);
           setTasks(prev => {
@@ -782,13 +771,13 @@ function App() {
         notify('📋 Tareas actualizadas por otro usuario');
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'techs' }, () => {
-        sb.from('techs').select('*').order('sort_order', { ascending: true }).order('id').then(({ data }) => { if (data) { setTechs(data.map(dbTechToLocal)); notify('👥 Lista de técnicos actualizada'); } });
+        sb.from('techs_public').select('*').order('sort_order', { ascending: true }).order('id').then(({ data }) => { if (data) { setTechs(data.map(dbTechToLocal)); notify('👥 Lista de técnicos actualizada'); } });
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'holidays' }, () => {
         sb.from('holidays').select('*').then(({ data }) => { if (data) { setHolidays(data.map(h => h.date)); notify('📅 Festivos actualizados'); } });
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'admins' }, () => {
-        sb.from('admins').select('*').then(({ data }) => { if (data) { setAdmins(data); notify('🛡️ Administradores actualizados'); } });
+        sb.from('admins_public').select('*').then(({ data }) => { if (data) { setAdmins(data); notify('🛡️ Administradores actualizados'); } });
       })
       .subscribe();
     return () => sb.removeChannel(ch);
@@ -797,23 +786,15 @@ function App() {
   const handleLogin = async (e) => {
     e.preventDefault();
     const u = e.target.username.value, p = e.target.password.value;
-    const hashedInput = await hashPassword(u, p);
-    const tryMatch = async (list, table) => {
-      const found = list.find(a => a.username === u);
-      if (!found) return null;
-      if (found.password === hashedInput) return found; // ya migrado
-      if (!looksHashed(found.password) && found.password === p) {
-        // Cuenta antigua en texto plano: coincide -> migrar silenciosamente a hash
-        await sb.from(table).update({ password: hashedInput }).eq('id', found.id);
-        return { ...found, password: hashedInput };
-      }
-      return null;
-    };
-    const fa = await tryMatch(admins, 'admins');
-    if (fa) { setUser(fa); setLoginError(""); return; }
-    const ft = await tryMatch(techs, 'techs');
-    if (ft) { setUser(ft); setLoginError(""); return; }
-    setLoginError("Usuario o contraseña incorrectos");
+    const { data, error } = await sb.rpc('handle_login', { p_username: u, p_password: p });
+    if (error) { setLoginError('Error de conexión. Inténtalo de nuevo. (' + error.message + ')'); return; }
+    const found = Array.isArray(data) ? data[0] : data;
+    if (found && found.id != null) {
+      setUser({ id: found.id, name: found.name, surname: found.surname, username: found.username, role: found.role, shiftType: found.shift_type });
+      setLoginError("");
+    } else {
+      setLoginError("Usuario o contraseña incorrectos");
+    }
   };
 
   const singleWeekDates = useMemo(() => Array.from({ length: 5 }, (_, i) => { const d = new Date(currentMonday); d.setDate(currentMonday.getDate() + i); return d; }), [currentMonday]);
@@ -1004,6 +985,7 @@ function App() {
     if (!task) return;
     if (fromTechId && task.techIds.length > 1) {
       // Tarea compartida con varios técnicos: solo se quita a este técnico, el resto la conserva
+      if (!window.confirm(`¿Quitar "${task.id} - ${task.customer}" de este técnico? El resto de técnicos la conservan.`)) return;
       const newTechIds = task.techIds.filter(tid => String(tid) !== String(fromTechId));
       setTasks(tasks.map(t => t.internalId === id ? { ...t, techIds: newTechIds } : t));
       skipNextToastRef.current = true;
@@ -1011,9 +993,11 @@ function App() {
       logAudit(sb, user, 'QUITAR_TECNICO_TAREA', `${task.id} - ${task.customer} (técnico ${fromTechId})`);
       return;
     }
+    if (!window.confirm(`¿Eliminar "${task.id} - ${task.customer}"?\n\nPodrás recuperarla desde la Papelera durante 30 días.`)) return;
+    // Borrado suave: se marca con fecha de borrado y se oculta, pero no se destruye de verdad todavía
     setTasks(tasks.filter(t => t.internalId !== id));
     skipNextToastRef.current = true;
-    await sb.from('tasks').delete().eq('internal_id', id);
+    await sb.from('tasks').update({ deleted_at: new Date().toISOString() }).eq('internal_id', id);
     logAudit(sb, user, 'ELIMINAR_TAREA', `${task.id} - ${task.customer}`);
   };
 
@@ -1119,11 +1103,12 @@ function App() {
   const bulkDeleteSelected = async () => {
     const count = selectedIds.size;
     if (count === 0) return;
-    if (!window.confirm(`¿Eliminar ${count} tarea(s) seleccionada(s)? Esta acción no se puede deshacer.`)) return;
+    if (!window.confirm(`¿Eliminar ${count} tarea(s) seleccionada(s)?\n\nPodrás recuperarlas desde la Papelera durante 30 días.`)) return;
     skipNextToastRef.current = true;
     const ids = Array.from(selectedIds);
+    const now = new Date().toISOString();
     setTasks(prev => prev.filter(t => !selectedIds.has(t.internalId)));
-    await Promise.all(ids.map(id => sb.from('tasks').delete().eq('internal_id', id)));
+    await Promise.all(ids.map(id => sb.from('tasks').update({ deleted_at: now }).eq('internal_id', id)));
     logAudit(sb, user, 'ELIMINAR_SELECCION', `${count} tareas`);
     pushToast(`🗑️ ${count} tarea(s) eliminada(s)`);
     setSelectedIds(new Set());
@@ -1258,6 +1243,50 @@ function App() {
     if (!error) pushToast('✅ Se usará la frase automática del día');
   };
 
+  const [trashItems, setTrashItems] = useState([]);
+  const [trashLoading, setTrashLoading] = useState(false);
+
+  const openTrash = async () => {
+    setModalMode('trash'); setTrashLoading(true);
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString();
+    const { data, error } = await sb.from('tasks').select('internal_id, id, customer, reference, date, tech_ids, deleted_at').not('deleted_at', 'is', null).gte('deleted_at', thirtyDaysAgo).order('deleted_at', { ascending: false });
+    setTrashItems(error ? [] : (data || []));
+    setTrashLoading(false);
+  };
+
+  const restoreTrashItem = async (internalId) => {
+    const { error } = await sb.from('tasks').update({ deleted_at: null }).eq('internal_id', internalId);
+    if (error) { alert('Error al restaurar: ' + error.message); return; }
+    setTrashItems(prev => prev.filter(t => t.internal_id !== internalId));
+    logAudit(sb, user, 'RESTAURAR_TAREA', `internal_id ${internalId}`);
+    pushToast('♻️ Tarea restaurada');
+    loadAll(true);
+  };
+
+  const deleteTrashItemForever = async (internalId, label) => {
+    if (!window.confirm(`¿Eliminar definitivamente "${label}"? Esto ya no se puede deshacer.`)) return;
+    const { error } = await sb.from('tasks').delete().eq('internal_id', internalId);
+    if (error) { alert('Error: ' + error.message); return; }
+    setTrashItems(prev => prev.filter(t => t.internal_id !== internalId));
+    logAudit(sb, user, 'ELIMINAR_DEFINITIVO', label);
+  };
+
+  const emptyTrash = async () => {
+    if (trashItems.length === 0) return;
+    if (!window.confirm(`¿Vaciar la papelera? Se eliminarán definitivamente ${trashItems.length} tarea(s). Esto ya no se puede deshacer.`)) return;
+    await Promise.all(trashItems.map(t => sb.from('tasks').delete().eq('internal_id', t.internal_id)));
+    logAudit(sb, user, 'VACIAR_PAPELERA', `${trashItems.length} tareas`);
+    setTrashItems([]);
+    pushToast('🗑️ Papelera vaciada');
+  };
+
+  // Purga automática y silenciosa de lo que lleva más de 30 días en la papelera (una vez por sesión de admin)
+  useEffect(() => {
+    if (!isAdmin) return;
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString();
+    sb.from('tasks').delete().not('deleted_at', 'is', null).lt('deleted_at', thirtyDaysAgo).then(() => {});
+  }, [isAdmin]);
+
   const openAuditLog = async () => {
     setModalMode('audit'); setAuditLoading(true);
     const { data, error } = await sb.from('audit_log').select('*').order('created_at', { ascending: false }).limit(100);
@@ -1345,12 +1374,17 @@ function App() {
   };
 
   const handleClearWeek = async () => {
-    if (!window.confirm('¿Borrar TODAS las tareas de esta semana? Esta acción no se puede deshacer.')) return;
+    if (!window.confirm('¿Borrar TODAS las tareas de esta semana?\n\nPodrás recuperarlas desde la Papelera durante 30 días.')) return;
     const dates = singleWeekDates.map(d => formatDateISO(d));
     const toDelete = tasks.filter(t => dates.includes(t.date));
+    const now = new Date().toISOString();
+    skipNextToastRef.current = true;
+    setTasks(prev => prev.filter(t => !dates.includes(t.date)));
     for (const t of toDelete) {
-      await sb.from('tasks').delete().eq('internal_id', t.internalId);
+      await sb.from('tasks').update({ deleted_at: now }).eq('internal_id', t.internalId);
     }
+    logAudit(sb, user, 'BORRAR_SEMANA', `${toDelete.length} tareas (semana ${weekNum})`);
+    pushToast(`🗑️ ${toDelete.length} tarea(s) de la semana eliminadas`);
   };
 
   const openReorder = () => { setReorderList([...techs].sort((a,b) => a.sortOrder - b.sortOrder)); setModalMode('reorder'); };
@@ -1454,12 +1488,17 @@ function App() {
     const formSurname = e.target.userSurname.value.toUpperCase();
     const formUsername = e.target.userUsername.value;
     const formPasswordRaw = e.target.userPassword.value;
-    // Si se edita y se deja el campo en blanco, se conserva la contraseña actual (ya hasheada)
-    const passwordToSave = formPasswordRaw
-      ? await hashPassword(formUsername, formPasswordRaw)
-      : (editingUser?.password || '');
     if (!editingUser && !formPasswordRaw) { alert('La contraseña es obligatoria para un usuario nuevo.'); setSaving(false); return; }
-    const data = { id: editingUser?.id || newSmallId(), name: formName, surname: formSurname, username: formUsername, password: passwordToSave, role: userFormRole };
+    // La contraseña se hashea DENTRO de Supabase (bcrypt) — el navegador nunca guarda ni envía el hash final
+    let hashedPassword = null;
+    if (formPasswordRaw) {
+      const { data: hashData, error: hashErr } = await sb.rpc('hash_password', { p_password: formPasswordRaw });
+      if (hashErr) { alert('Error al preparar la contraseña: ' + hashErr.message); setSaving(false); return; }
+      hashedPassword = hashData;
+    }
+    // Si se edita y se deja el campo en blanco, no se incluye "password" y así no se toca la ya guardada
+    const data = { id: editingUser?.id || newSmallId(), name: formName, surname: formSurname, username: formUsername, role: userFormRole };
+    if (hashedPassword) data.password = hashedPassword;
     let error = null;
     if (userFormRole === 'tech') {
       const td = { ...data, shift_type: e.target.shiftType ? e.target.shiftType.value : 'NORMAL' };
@@ -1756,6 +1795,7 @@ function App() {
               <button onClick={exportToExcel} className="btn-header no-print" title="Exportar semana a Excel"><FileText size={13} color="#16a34a" /> EXCEL</button>
               <button onClick={exportToPDF} disabled={pdfGenerating} className="btn-header no-print" title="Exportar semana a PDF" style={{opacity:pdfGenerating?0.6:1}}><FileText size={13} color="#dc2626" /> {pdfGenerating ? 'GENERANDO...' : 'PDF'}</button>
               <button onClick={openAuditLog} className="btn-header no-print" title="Historial de cambios"><FileText size={13} color="#7c3aed" /> HISTORIAL</button>
+              <button onClick={openTrash} className="btn-header no-print" title="Papelera de tareas eliminadas"><Trash2 size={13} color="#dc2626" /> PAPELERA</button>
               <button onClick={toggleSelectionMode} className="btn-header no-print" style={selectionMode ? {background:'#2563eb',color:'white',border:'none'} : {}} title="Seleccionar varias tareas"><CheckCircle2 size={13} color={selectionMode?'white':'#16a34a'} /> {selectionMode ? 'CANCELAR' : 'SELECCIONAR'}</button>
             </>)}
             <button onClick={toggleFullscreen} className="btn-header no-print" title="Pantalla completa" style={{padding:'6px 8px'}}>{isFullscreen ? <Minimize size={15} /> : <Maximize size={15} />}</button>
@@ -2297,6 +2337,42 @@ function App() {
               </select>
             </div>
             <button onClick={confirmBulkMove} style={{padding:'12px',background:'#2563eb',color:'white',border:'none',borderRadius:'12px',fontWeight:900,fontSize:'11px',textTransform:'uppercase',cursor:'pointer'}}>Mover</button>
+          </div>
+        </Modal>
+      )}
+
+      {modalMode === 'trash' && (
+        <Modal onClose={closeModal} maxWidth="560px">
+          <div style={{padding:'16px',borderBottom:'1px solid #e2e8f0',display:'flex',alignItems:'center',justifyContent:'space-between',background:'#f8fafc'}}>
+            <div>
+              <h3 style={{fontWeight:900,color:'#1e293b',textTransform:'uppercase',letterSpacing:'2px',fontSize:'12px',margin:0}}>Papelera</h3>
+              <p style={{fontSize:'9px',color:'#94a3b8',marginTop:'2px',fontWeight:700}}>Las tareas eliminadas se conservan aquí 30 días</p>
+            </div>
+            <button onClick={closeModal} style={{background:'none',border:'none',cursor:'pointer'}}><X size={18} /></button>
+          </div>
+          <div style={{padding:'16px',maxHeight:'440px',overflowY:'auto'}}>
+            {trashLoading && <p style={{fontSize:'11px',color:'#94a3b8',textAlign:'center',padding:'16px'}}>Cargando...</p>}
+            {!trashLoading && trashItems.length === 0 && (
+              <p style={{fontSize:'11px',color:'#94a3b8',textAlign:'center',padding:'16px'}}>La papelera está vacía.</p>
+            )}
+            {!trashLoading && trashItems.length > 0 && (
+              <button onClick={emptyTrash} style={{marginBottom:'12px',padding:'8px 12px',background:'#fee2e2',color:'#dc2626',border:'1px solid #fecaca',borderRadius:'8px',fontSize:'10px',fontWeight:900,textTransform:'uppercase',cursor:'pointer'}}>Vaciar papelera</button>
+            )}
+            {!trashLoading && trashItems.map(t => {
+              const techNames = (t.tech_ids || []).map(tid => { const tt = techs.find(x => String(x.id) === String(tid)); return tt ? tt.name : '?'; }).join(', ');
+              return (
+                <div key={t.internal_id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 12px',borderBottom:'1px solid #f1f5f9',gap:'10px'}}>
+                  <div style={{minWidth:0,flex:1}}>
+                    <div style={{fontWeight:900,fontSize:'12px',color:'#1e293b',textTransform:'uppercase',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.id} - {t.customer}</div>
+                    <div style={{fontSize:'10px',color:'#94a3b8',fontWeight:700}}>{t.date} · {techNames} · borrada el {new Date(t.deleted_at).toLocaleDateString('es-ES')}</div>
+                  </div>
+                  <div style={{display:'flex',gap:'6px',flexShrink:0}}>
+                    <button onClick={() => restoreTrashItem(t.internal_id)} title="Restaurar" style={{padding:'6px 10px',background:'#16a34a',color:'white',border:'none',borderRadius:'8px',fontSize:'10px',fontWeight:900,textTransform:'uppercase',cursor:'pointer',display:'flex',alignItems:'center',gap:'4px'}}><RefreshCw size={11} /> Restaurar</button>
+                    <button onClick={() => deleteTrashItemForever(t.internal_id, `${t.id} - ${t.customer}`)} title="Eliminar definitivamente" style={{padding:'6px',background:'none',color:'#94a3b8',border:'1px solid #e2e8f0',borderRadius:'8px',cursor:'pointer',display:'flex'}}><Trash2 size={13} /></button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </Modal>
       )}
