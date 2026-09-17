@@ -2445,15 +2445,18 @@ function App() {
                 {auditFilter ? 'No hay registros para este técnico ese día.' : <>No hay registros en los últimos {auditDaysRange} días.<br/>Si es la primera vez, es posible que falte crear la tabla <code>audit_log</code> en Supabase (consulta las instrucciones que te he dado).</>}
               </p>
             )}
-            {!auditLoading && auditLog.map((a, i) => (
+            {!auditLoading && auditLog.map((a, i) => {
+              const isDeleteAction = /BORRAR|ELIMINAR|VACIAR/.test(a.action);
+              return (
               <div key={i} style={{display:'flex',flexDirection:'column',gap:'2px',padding:'8px 12px',borderBottom:'1px solid #f1f5f9'}}>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                   <span style={{fontWeight:900,fontSize:'11px',color:'#1e293b',textTransform:'uppercase'}}>{a.actor}</span>
                   <span style={{fontSize:'9px',color:'#94a3b8',fontWeight:700}}>{new Date(a.created_at).toLocaleString('es-ES')}</span>
                 </div>
-                <div style={{fontSize:'10px',color:'#475569'}}><strong style={{color:'#2563eb'}}>{a.action}</strong> — {a.detail}</div>
+                <div style={{fontSize:'10px',color:isDeleteAction?'#dc2626':'#475569'}}><strong style={{color:isDeleteAction?'#dc2626':'#2563eb'}}>{a.action}</strong> — {a.detail}</div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </Modal>
       )}
