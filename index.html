@@ -1295,7 +1295,13 @@ function App() {
 
   const openBackups = async () => {
     setModalMode('backups'); setBackupLoading(true); setSelectedBackup(null);
-    const { data, error } = await sb.from('task_backups').select('backup_date').order('backup_date', { ascending: false }).limit(30);
+    let data = null, error = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const r = await sb.from('task_backups').select('backup_date').order('backup_date', { ascending: false }).limit(30);
+      data = r.data; error = r.error;
+      if (!error) break;
+      await new Promise(res => setTimeout(res, 2000));
+    }
     setBackupDates(error ? [] : (data || []).map(d => d.backup_date));
     const { data: pdfs } = await sb.from('weekly_pdf_backups').select('*').order('week_start', { ascending: false }).limit(20);
     setWeeklyPdfs(pdfs || []);
@@ -1304,8 +1310,15 @@ function App() {
 
   const inspectBackup = async (date) => {
     setBackupLoading(true);
-    const { data, error } = await sb.from('task_backups').select('tasks_json').eq('backup_date', date).single();
-    if (error || !data) { setBackupLoading(false); alert('No se pudo leer esa copia: ' + (error?.message || '')); return; }
+    let data = null, error = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const r = await sb.from('task_backups').select('tasks_json').eq('backup_date', date).single();
+      data = r.data; error = r.error;
+      if (!error) break;
+      // El proyecto puede tardar en "despertar" tras estar inactivo: esperamos un poco y reintentamos
+      await new Promise(res => setTimeout(res, 2000));
+    }
+    if (error || !data) { setBackupLoading(false); alert('No se pudo leer esa copia tras varios intentos: ' + (error?.message || '') + '\n\nPrueba a esperar unos segundos y vuelve a intentarlo.'); return; }
     const backupTasks = data.tasks_json || [];
     // Comparamos por internal_id contra las tareas actuales (incluidas las que están en la Papelera, para no duplicar avisos)
     const currentIds = new Set(tasks.map(t => t.internalId));
