@@ -148,12 +148,17 @@ const ensureFilesLoaded = async (sbClient, taskList) => {
   }));
 };
 const logAudit = async (sbClient, user, action, detail, extra = {}) => {
+  const base = {
+    actor: user ? `${user.name} ${user.surname}` : 'Desconocido',
+    action, detail, created_at: new Date().toISOString(),
+  };
   try {
-    await sbClient.from('audit_log').insert({
-      actor: user ? `${user.name} ${user.surname}` : 'Desconocido',
-      action, detail, created_at: new Date().toISOString(),
-      tech_id: extra.techId ?? null, task_date: extra.date ?? null,
-    });
+    const { error } = await sbClient.from('audit_log').insert({ ...base, tech_id: extra.techId ?? null, task_date: extra.date ?? null });
+    if (error) {
+      // Es posible que aún falten las columnas tech_id/task_date (esa migración no ejecutada):
+      // reintentamos sin ellas para no perder el registro básico del historial.
+      await sbClient.from('audit_log').insert(base);
+    }
   } catch (e) { /* tabla opcional: si no existe, se ignora silenciosamente */ }
 };
 
